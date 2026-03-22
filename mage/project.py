@@ -2,9 +2,9 @@ import pandas as pd
 import os
 from os.path import join, exists
 from pathlib import Path
-from .config import Config
 
-import database as db
+from .config import Config
+from . import database as db
 
 
 class Project:
@@ -44,19 +44,22 @@ class Project:
         # make the directory housing the MAG-E database
         os.makedirs(self.config.mage_db_dir)
 
+        # the database table will be built up from the user-specified cluster assignments
         db_table = pd.read_csv(self.config.cluster_assignments, index=None)
-        db.check_each_genome_file_exists(db_table.genome, self.config.genomes_dir)
+        db.check_genome_files_exist(db_table.genome, self.config.genomes_dir)
 
         # Cluster the genomes at the strain level
-        db.run_strain_dreps(db_table, self.config.genomes_dir, self.config.strain_dreps, threads, ani)
+        db.run_strain_clustering(db_table, self.config.genomes_dir, self.config.strain_dreps, threads, ani)
 
-        # metadata for database
-        db.build_database_table(db_table, self.config.genomes_dir, self.config.strain_dreps, self.config.mage_db_md)
+        # Add the strain cluster information to the database table
+        db_table = db.build_database_table(db_table, self.config.genomes_dir, self.config.strain_dreps, self.config.mage_db_md)
 
         # build syldb of species representatives
-        reprs= db_table.FileLocation[db_table.isSpeciesRepr]
+        reprs = db_table.FileLocation[db_table.isSpeciesRepr]
         db.construct_sylphdb(reprs, db_prefix='repr', t=threads,force=True)
 
         # build sylphdb of all genomes
         all_genomes = db_table.FileLocation
         db.construct_sylphdb(all_genomes, db_prefix='all', t=threads,force=True)
+
+        return db_table
