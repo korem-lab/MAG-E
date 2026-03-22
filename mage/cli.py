@@ -40,7 +40,7 @@ def set_project(
 def make_mage_db(
     directory: Path = typer.Argument(..., help="Project directory"),
     threads: int = typer.Option(32, help='Threads to run dRep clustering and sylph'),
-    ani: float = type.Option(0.98, help='ANI for strain clustering')
+    ani: float = typer.Option(0.98, help='ANI for strain clustering')
 ):
     """
     Constructs the MAG-E database for the project.
