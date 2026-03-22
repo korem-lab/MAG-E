@@ -3,11 +3,14 @@ import pandas as pd
 from os.path import exists, join
 from subprocess import run
 
-def check_each_genome_file_exists(genomes, directory):
+def check_genome_files_exist(genomes, directory):
     for g in genomes:
         assert exists(join(directory, f'{g}.fasta.gz'))
 
-def run_strain_dreps(genomes, genome_dir, drep_dir, threads, ani):
+def run_strain_clustering(genomes, genome_dir, drep_dir, threads, ani):
+    """
+    Cluster genomes at the strain level. Currently this is done with dRep.
+    """
     # construct the database
     os.makedirs(join(drep_dir, 'strain_dreps'))
     for sprp, spdf in genomes.groupby('SpeciesRepr'):
