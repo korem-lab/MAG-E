@@ -11,7 +11,7 @@ class OrderedGroup(TyperGroup):
 app = typer.Typer(help='MAG-E -- Metagenome Assembled Genome Evaluator',cls=OrderedGroup)
 
 @app.command()
-def start_project(
+def initialize_project(
     name: str = typer.Argument(..., help="New MAG-E project name."),
     directory: Path = typer.Argument(..., help="Project directory.")
 
@@ -20,8 +20,8 @@ def start_project(
     "Creates new project with an empty configuration file."
 
 @app.command()
-def verify_config():
-    "Makes sure everything needed is present in the configuration."
+def build_project():
+    "Verifies the config, and populates the project with the required directories."
     pass
 
 @app.command()
@@ -47,7 +47,8 @@ def make_maggie_db(
     Constructs the MAG-E database for the project.
     """
     project = Project.load(directory)
-    project.make_database(threads, ani, c)
+    project.make_database(threads, ani, c, write_to_disk=True)
+
 
 @app.command()
 def make_mirrors(
@@ -74,53 +75,63 @@ def simulate_mgx(
     project.simulate_mgx(threads, n_reads)
 
 @app.command()
-def create_manifest():
+def construct_tasks(
+    directory: Path = typer.Argument(..., help="Project directory"),
+):
     """
-    Builds the manifest listing all MAG generation tasks to be run.
+    Constructs a task manifest, listing all MAG generation tasks to be run.
     """
-    pass
+    project = Project.load(directory)
+    project.construct_tasks(write_to_disk=True)
 
 @app.command()
-def run_assembly():
+def run_assembly(
+    directory: Path = typer.Argument(..., help="Project directory"),
+    threads: int = typer.Option(32, help='Threads to assemblers')
+):
     """
     Runs assembly tasks.
     """
-    pass
+    project = Project.load(directory)
+    project.run_assembly(threads)
 
 @app.command()
-def construct_ground_truth():
+def construct_ground_truth(
+    directory: Path = typer.Argument(..., help="Project directory"),
+    min_contig_len: int = typer.Option(100, help='Minimum length of contigs that can contribute to ground truth metrics.'), 
+    min_pident: float = typer.Option(99, help='Minimum percent identity for a ground truth match'),
+    min_aln_prop: float = typer.Option(99, help='alignment_length >= contig_length*(min_aln_prop) for a ground truth match'),
+    max_aln_prop: float = typer.Option(101, help='alignment_length <= contig_length*(max_aln_prop) for a ground truth match')
+):
     """
     Constructs the ground truth for each assembly.
     """
-    pass
+    project = Project.load(directory)
+    project.construct_ground_truth(min_contig_len, min_pident, min_aln_prop, max_aln_prop)
 
 @app.command()
 def run_binning():
     """
-    Runs binning and quality control tasks.
+    Runs binning and wrappers.
     """
-    pass
 
 @app.command()
-def run_wrap():
+def run_quality_control():
     """
-    Runs wrappers and quality control tasks.
+    Runs quality control tools.
     """
-    pass
 
 @app.command()
 def calc_per_genome_metrics():
     """
     Calculate MAG-E recall, precision, F-score per genome. 
     """
-    pass
 
 @app.command()
 def calc_contig_level_metrics():
     """
     Calculate MAG-E recall, precision, F-score of contig groups. 
     """
-    pass
 
 @app.command()
 def construct_recoverable_set(
@@ -130,7 +141,6 @@ def construct_recoverable_set(
     """
     Constructs the set of genomes considered recoverable. These will be used pipeline evaluations.
     """
-    pass
 
 @app.command()
 def evaluate_pipelines(
@@ -141,4 +151,3 @@ def evaluate_pipelines(
     Builds a linear mixed model of the per-genome metrics over all MAG-pipelines.
     Estimated marginal means (and other values) from model are reported and plotted.
     """
-    pass

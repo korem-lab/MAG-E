@@ -42,7 +42,7 @@ def get_dRep_cluster_info(grep, drep_dir):
         print('missing', grep)
         return None
 
-def build_database_table(database, genomes_dir, drep_dir, maggie_db_dir):
+def build_database_table(database, genomes_dir, drep_dir):
 
     # get the genome representatives of species clusters >= 2
     greprs = database.SpeciesRepr.value_counts()[database.SpeciesRepr.value_counts() > 1].index.to_series()
@@ -68,8 +68,6 @@ def build_database_table(database, genomes_dir, drep_dir, maggie_db_dir):
     database['StrainRepr'] = database.groupby('StrainCID', group_keys=False).apply(lambda x: pd.Series(x.genome[x.isStrainRepr].values.repeat(len(x)), index=x.index))
     database['FileLocation'] = database.genome.apply(lambda x: f'{genomes_dir}/{x}.fasta.gz')
 
-    # write MAG-E database
-    database.to_csv(join(maggie_db_dir, 'metadata.csv'),index=None)
     return database
 
 def construct_sylphdb(genome_list, maggie_db_dir, db_prefix, c=200, t=8, force=False):

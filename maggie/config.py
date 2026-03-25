@@ -11,9 +11,14 @@ class Config:
     genomes_dir: str = 'NULL'
     cluster_assignments: str = 'NULL'
     samples_dir: str = 'NULL'
-    read_counts: str = 'NULL'
+    read_counts: str = 'NULL' # you have to place this in the project directory after its constructed 'project_base/read_counts.csv'
     contig_properties: str = 'NULL'
     prefix1: str  = 'NULL'
+    assemblers: list = ['NULL', 'NULL']
+    binners: list = ['NULL', 'NULL']
+    modes: list = ['NULL', 'NULL'] # for example ['single', 'all', 'mash20', 'mash5']. Need files 'project_base/all_datasets.csv', 'project_base/mash20_datasets.csv' that you need to put there
+    qctools: list = ['NULL', 'NULL']
+
     n_samples: int = -1
 
     @classmethod
@@ -58,3 +63,15 @@ class Config:
     @property
     def simulation_dir(self):
         return join(self.project_base, 'simulations')
+
+    @property
+    def assembly_cache(self):
+        return join(self.project_base, 'assembly_cache')
+
+    @property
+    def bintask_dir(self):
+        return join(self.project_base, 'bintask_dir')
+
+    @property
+    def manifest(self):
+        return join(self.project_base, 'manifest.csv')

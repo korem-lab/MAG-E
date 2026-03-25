@@ -7,6 +7,10 @@ from pathlib import Path
 from .config import Config
 from . import database as db
 from . import mirror_specs as ms
+from . import simulation as sm
+from .tasks import assembly as ab, binning as bn, quality_control as qc, task_utils as tu
+from . import ground_truth as gt 
+from .utils import manifest_get, parse_manifest
 
 
 class Project:
@@ -36,7 +40,7 @@ class Project:
         config.verify_config()
         return cls(project_path, config)
     
-    def make_database(self, threads=32, ani=0.98, c=200):
+    def make_database(self, threads=32, ani=0.98, c=200, write_to_disk=False):
         """
         Makes the MAG-E database from the input genomes. 
         
@@ -54,7 +58,7 @@ class Project:
         db.run_strain_clustering(db_table, self.config.genomes_dir, self.config.strain_dreps, threads, ani)
 
         # Add the strain cluster information to the database table
-        db_table = db.build_database_table(db_table, self.config.genomes_dir, self.config.strain_dreps, self.config.maggie_db_md)
+        db_table = db.build_database_table(db_table, self.config.genomes_dir, self.config.strain_dreps)
 
         # build syldb of species representatives
         reprs = db_table.FileLocation[db_table.isSpeciesRepr]
@@ -64,6 +68,8 @@ class Project:
         all_genomes = db_table.FileLocation
         db.construct_sylphdb(all_genomes, db_prefix='all', t=threads,c=c, force=True)
 
+        if write_to_disk:
+            db_table.to_csv(self.config.maggie_db_md)
         return db_table
     
     def make_mirrors(self, threads, c):
@@ -90,7 +96,45 @@ class Project:
         """
         specs = sorted(glob.glob(join(self.config.simulation_dir, '*_metagenomic.spec.csv')))
         for spec in specs:
-            ms.run_InSilicoSeq(
+            sm.run_InSilicoSeq(
                 spec, self.config.simulation_dir, self.config.read_counts, 
                 self.config.prefix1, n_reads, threads, force=True
             )
+    
+    def construct_tasks(self, write_to_disk=False):
+        """
+        Construct the manifest, which is a record of all MAG generation tasks.
+        """
+
+        # make the manifest
+        manifest = tu.make_manifest(
+            self.config.assemblers, self.config.binners, self.config.modes, self.config.qctools,
+            self.config.project_base, self.config.simulation_dir
+        )
+
+        # make the core directories for MAG generation. 
+        os.makedirs(self.config.assembly_cache, self.config.bintask_dir)
+        manifest.spec.apply(lambda x: os.makedirs(manifest_get('asm_dir', x), exist_ok=True))
+        manifest.spec.apply(lambda x: os.makedirs(manifest_get('task_out_dir', x), exist_ok=True))
+
+        if write_to_disk:
+            manifest.to_csv(join(self.config.project_base, 'manifest.csv'), index=None)
+        return manifest
+
+    def run_assembly(self, threads):
+        """
+        Runs each assembly task in the manifest. 
+        """
+
+        manifest = parse_manifest(self.config.manifest)
+        tu.run_assemblies(manifest, threads)
+
+    def construct_ground_truth(self, min_contig_len=100, min_pident=99, min_prop=99, max_prop=101):
+        """
+        Constructs the ground truth for each assembly. 
+        """
+        manifest = parse_manifest(self.configs.manifest)
+        gt.construct_ground_truth(
+            manifest, self.config.maggie_db_md,
+            min_contig_len, min_pident, min_prop, max_prop
+        )
