@@ -1,9 +1,13 @@
 import pandas as pd
 import json
+from pathlib import Path
 import os
 import shutil
 import sys
 from subprocess import run
+
+def write_done_flag(task_out_dir, name):
+    Path(os.path.join(task_out_dir, f'{name}_DONE')).touch()
 
 def parse_maggie_db(file):
     df = pd.read_csv(file)
@@ -13,7 +17,7 @@ def parse_maggie_db(file):
     ]:
         assert e in df.columns
     return df
-
+        
 def parse_read_counts(file):
     df = pd.read_csv(file)
     assert ['samples', 'count'] == df.columns

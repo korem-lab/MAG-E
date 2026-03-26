@@ -133,8 +133,16 @@ class Project:
         """
         Constructs the ground truth for each assembly. 
         """
-        manifest = parse_manifest(self.configs.manifest)
+        manifest = parse_manifest(self.config.manifest)
         gt.construct_ground_truth(
             manifest, self.config.maggie_db_md,
             min_contig_len, min_pident, min_prop, max_prop
         )
+    
+    def run_binning(self, run_only, force_prep, force_bin, threads=8):
+        manifest = parse_manifest(self.config.manifest)
+        tu.run_bin_tasks(manifest, run_only, force_prep, force_bin, threads)
+
+    def run_wrap(self, run_only, force_prep, force_bin, threads=8):
+        manifest = parse_manifest(self.config.manifest)
+        tu.run_wrap_tasks(manifest, run_only, force_prep, force_bin, threads)

@@ -2,9 +2,16 @@ import os
 from os.path import join
 import pandas as pd
 import numpy as np
+from subprocess import run
 import re
 import glob
 from .utils import manifest_get, parse_maggie_db
+
+def make_blastdb(ref_genomes, blast_db, title):
+    run(f'zcat {ref_genomes} | makeblastdb -dbtype nucl -in - -out {blast_db} -title {title}',shell=True)
+
+def blastn(blast_db, contigs, out_file, threads=8):
+    run(f'blastn -db {blast_db} -outfmt "6 qacc sacc evalue qstart qend qlen sstart send slen pident nident length" -query {contigs} -out {out_file} -num_threads {threads}', shell=True)
 
 def get_blast_file(sample,contigs,genomes, outdir, force=False):
     genomes_str = ' '.join(genomes)
@@ -12,8 +19,8 @@ def get_blast_file(sample,contigs,genomes, outdir, force=False):
     if os.path.exists(blast_results) and not force:
         return load_blast_results(blast_results)
     db_name = os.path.join(outdir, f'bdb_{sample}')
-    utls.make_blastdb(genomes_str, db_name, sample)
-    utls.blastn(db_name, contigs, blast_results, threads=4)
+    make_blastdb(genomes_str, db_name, sample)
+    blastn(db_name, contigs, blast_results, threads=4)
     return load_blast_results(blast_results)
 
 def filter_blast_hits(hits, min_contig_len=100, min_pident=99, min_prop=99,max_prop=101):
@@ -60,24 +67,18 @@ def construct_ground_truth(
     asm_tasks = set()
 
     # extract assembly tasks
-    for i in range(len(manifest)):
-        spec = manifest.loc[i, 'spec']
-        ts = manifest_get(spec, 'target_sample')
-        sd = manifest_get(spec, 'simulation_dir')
-        asm_dir = manifest_get(spec, 'asm_dir')
-        # asm dir is where the sample was assembled (i.e, ends with the sample file)
-        # but this is now moved a directory up into the assembly_task_n directory.
-        asm_dir = os.path.basename(os.path.normpath(asm_dir))
-        asm_tasks.add( 
-            (ts, sd, asm_dir) 
-        )
-
-    # Build the ground truth for each
-    for (ts, sd, asm_dir) in asm_tasks:
-        genomes = glob.glob(sd, f'iss_{ts}_genomes/*.fasta.gz')
-        contigs = join(asm_dir, f'{ts}.contigs.fasta')
-        hits = get_blast_file(ts, contigs, genomes, asm_dir)
+    asm_tasks = manifest[['target_sample', 'simulation_dir', 'asm_dir']]
+    # asm dir is where the sample was assembled (i.e, ends with the sample file)
+    # but this is now moved a directory up into the assembly_task_n directory.
+    asm_tasks.asm_dir = asm_tasks.asm_dir.apply(lambda x: os.path.basename(os.path.normpath(x)))
+    asm_tasks.drop_duplicates(inplace=True)
+    
+    for i in range(len(asm_tasks)):
+        t = asm_tasks.loc[i,:]
+        genomes = glob.glob(t.simulation_dir, f'iss_{t.target_sample}_genomes/*.fasta.gz')
+        contigs = join(t.asm_dir, f'{t.target_sample}.contigs.fasta')
+        hits = get_blast_file(t.target_sample, contigs, genomes, t.asm_dir)
         hits = filter_blast_hits(hits, min_contig_len, min_pident, min_prop, max_prop)
         db_table = parse_maggie_db(maggie_db_table)
-        gt = _construct_ground_truth(ts, db_table, hits)
-        gt.to_csv(os.path.join(asm_dir, f'{ts}_gt_table.csv'), index=None)
+        gt = _construct_ground_truth(t.target_sample, db_table, hits)
+        gt.to_csv(os.path.join(t.asm_dir, f'{t.target_sample}_gt_table.csv'), index=None)

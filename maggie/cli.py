@@ -110,10 +110,21 @@ def construct_ground_truth(
     project.construct_ground_truth(min_contig_len, min_pident, min_aln_prop, max_aln_prop)
 
 @app.command()
-def run_binning():
+def run_binning(
+    directory: Path = typer.Argument(..., help="Project directory"),
+    threads: int = typer.Argument(..., help='Number of threads to run each binning task.'),
+    run_only: str = typer.Option(None, help='Run prep or binning only.'),
+    force_bin_prep: bool = type.Option(False, help='Will force rerun the prep.'),
+    force_bin: bool = type.Option(False, help='Will force rerun the binning.'),
+    force_wrap_prep: bool = type.Option(False, help='Will force rerun the wrapping prep.'),
+    force_wrap: bool = type.Option(False, help='Will force rerun wrapping.')
+):
     """
     Runs binning and wrappers.
     """
+    project = Project.load(directory)
+    project.run_binning(run_only, force_bin_prep, force_bin, threads)
+    project.run_wrap(run_only, force_wrap_prep, force_wrap, threads)
 
 @app.command()
 def run_quality_control():
