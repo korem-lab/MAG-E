@@ -6,8 +6,23 @@ import shutil
 import sys
 from subprocess import run
 
+def run_R_script(script, *args):
+    cmd = f'Rscript {script}.R {" ".join(args)}'
+    print(cmd)
+    run(cmd, shell=True)
+
 def write_done_flag(task_out_dir, name):
     Path(os.path.join(task_out_dir, f'{name}_DONE')).touch()
+
+def get_contig_name(hdr):
+    """get contig name from fasta header."""
+    c = hdr.strip().split()[0]
+    if c.startswith('>'):
+        c = c[1:]
+    return c
+
+def remove_fasta_ext(s):
+    return s.replace('.fasta', '').replace('.fa', '')
 
 def parse_maggie_db(file):
     df = pd.read_csv(file)
@@ -29,9 +44,12 @@ def parse_binning_mode_datasets(file):
     assert ['target_sample', 'dataset'] == df.columns
     return df
 
+def parse_quality_control_table(file):
+    df = pd.read_csv(file)
+    return df
+
 def parse_manifest(file):
-    df = pd.read_csv(file):
-    assert ['task_name', 'spec'] == df.columns
+    df = pd.read_csv(file)
     return df
 
 def decompress(genomes, exe='pigz'):

@@ -1,15 +1,26 @@
-from os.path import join, exists
+from os.path import join, exists, basename
 import pandas as pd
 import hashlib
 from itertools import product
 import json
-from ..utils import parse_binning_mode_datasets, manifest_get, write_done_flag, rm_dir
+from ..utils import parse_binning_mode_datasets, write_done_flag, rm_dir, get_contig_name, remove_fasta_ext
 from . import assembly as ab, binning as bn, quality_control as qc
+import numpy as np
 
 jd = lambda x: json.dumps(x)
 
+def get_summary_names(refiners):
+    refiner_summary_name = pd.DataFrame(
+        {'refiner':refiner, 'ro':ro, 'pipelines':pipelines} for refiner, ro, pipelines in refiners
+    )
+    summary_names = list()
+    for _, df in refiner_summary_name.groupby('refiner'):
+        df['name'] = np.arange(len(df))
+        summary_names.append(df)
+    refiner_summary_name = pd.concat(summary_names)
+
 def make_manifest(
-    assemblers, binners, modes, wrappers, qctools, simulation_dir, 
+    assemblers, binners, modes, refiners, qctools, simulation_dir, 
     assembly_cache, bintask_dir, project_base
 ):
     bintask_counter = set()
@@ -26,8 +37,8 @@ def make_manifest(
             'simulation_dir': simulation_dir,
             'task_out_dir': join(bintask_dir, f'bin_task_{len(bintask_counter)}'),
             'assembler': ab, 'assembler_options': abo, 'binner': bn, 'binner_options': bno,
-            'binning-mode': mode, 'qctools': qctools,
-            'is_wrapper': False
+            'binning_mode': mode, 'qctools': qctools,
+            'is_refiner': False
         }
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
@@ -37,22 +48,26 @@ def make_manifest(
             spec['asm_dir'] = join(spec['asm_dir'], trgt)
             tasks.append(spec)
 
-    for (wrapper, wpo, pipelines) in wrappers:
-        bintask_counter.add((wrapper, wpo, pipelines))
+    smry = get_summary_names(refiners)
+    for (refiner, ro, pipelines) in refiners:
+        bintask_counter.add((refiner, ro, tuple(pipelines)))
         spec = {
-            'task_dir': join(bintask_dir, f'bin_task_{len(bintask_counter)}'), 
-            'qctools': qctools, 'simulation_dir': simulation_dir, 'is_wrapper': True
+            'task_out_dir': join(bintask_dir, f'bin_task_{len(bintask_counter)}'), 
+            'qctools': qctools, 'simulation_dir': simulation_dir, 'is_refiner': True,
+            'refiner': refiner, 'refiner_options': 'ro', 'pipelines': pipelines
 
         }
+        spec['summary_name'] = smry.loc[(smry.refiner == refiner) & (smry.ro == ro) & (smry.pipelines == pipelines)].name
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
             spec['samples'] = df.dataset.to_list()
             spec['task_out_dir'] = join(spec['task_out_dir'], trgt)
+            tasks.append(spec)
             
     for spec in tasks:
-        spec['task_name'] = hashlib.sha256(jd(spec.encode()).hexdigest())
-    tasks = pd.DataFrame(spec)
+        spec['task_name'] = hashlib.sha256(jd(spec).encode()).hexdigest()
+    tasks = pd.DataFrame(tasks)
 
 def run_assemblies(manifest, threads=8):
 
@@ -72,18 +87,40 @@ def run_assemblies(manifest, threads=8):
 
 def run_bin_tasks(manifest, run_only=None, force_prep=False, force_bin=False, threads=8):
     # run prep
-    bin_tasks = manifest[~manifest.is_wrapper]
+    bin_tasks = manifest[~manifest.is_refiner]
     if run_only is None or run_only == 'prep':
-        for i in len(range(bin_tasks)):
+        for i in range(len(bin_tasks)):
             t = bin_tasks.loc[i,:]
             if force_prep or not task_done(t, 'prep', clear=True):
                 run_prep(t, threads)
     # run bin
     if run_only is None or run_only == 'bin':
-        for i in len(range(manifest)):
-            t = manifest.loc[i,:]
+        for i in range(len(bin_tasks)):
+            t = bin_tasks.loc[i,:]
             if force_bin or not task_done(t, 'bin', clear=True):
                 run_bin(t, threads)
+
+def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
+    refine_tasks = manifest[manifest.is_refiner] 
+    bin_tasks = manifest[~manifest.is_refiner]
+    if run_only is None or run_only == 'refine':
+        for i in len(range(refine_tasks)):
+            t = refine_tasks.loc[i, :]
+            if force_refine or not task_done(t, 'bin', clear=True):
+                pipeline_paths = list()
+                for (ab, abo, bn, bno, ts) in t.pipelines:
+                    # select bin task
+                    bt = bin_tasks.loc[
+                        (bin_tasks.assembler == ab) & (bin_tasks.assembler_options == abo) & 
+                        (bin_tasks.binner == bn) & (bin_tasks.binner_options == bno) & 
+                        (bin_tasks.target_sample == ts)
+                    ]
+                    assert len(bt) == 1
+                    # get the path
+                    pipeline_paths.append(bt.task_out_dir)
+                # we need only the paths of each binning task we want to refine 
+                t.pipelines = pipeline_paths
+                run_bin(t, threads, refine=True)
 
 def run_prep(spec, threads):
     print('run_prep:', spec.task_name, flush=True)
@@ -91,9 +128,9 @@ def run_prep(spec, threads):
     b.run_prep(**(spec.to_dict() + {'threads':threads}))
     write_done_flag(spec.task_out_dir, name='prep')
 
-def run_bin(spec, threads):
+def run_bin(spec, threads, refine=False):
     print('run_bin:', spec.task_name,flush=True)
-    b = getattr(bn, spec.binner + 'Binner')
+    b = getattr(bn, spec.binner + 'Binner' if not refine else 'Refiner')
     b.run_binning(**(spec.to_dict()+ {'threads':threads}))
     write_done_flag(spec.task_out_dir, name='bin')
 
@@ -105,7 +142,124 @@ def clear_bin(task_out_dir, binner):
     rm_dir(join(task_out_dir, 'output', f'{binner}_bins'))
     rm_dir(join(task_out_dir, 'bin_DONE'))
 
+def run_quality_control(manifest, force=False, threads=8):
+    for i in range(len(manifest)):
+        t = manifest.loc[i,:]
+        if force or not task_done(t, stage='qc', clear=True):
+            for q in t.qc_tools:
+                q = getattr(qc, 'QCTool'+q)
+                q.run(**(t.to_dict() + {'threads':threads}))
+        combine_qc_tables(t.qc_tools, t.task_out_dir)
+
+def combine_qc_tables(qc_tools, task_out_dir):
+    assert NotImplementedError
+
+def construct_binning_tables(manifest):
+    for i in range(len(manifest)):
+        t = manifest.loc[i,:]
+        if t.is_refiner:
+            b = getattr(bn, 'Refiner'+t.refiner)
+        else:
+            b = getattr(bin, 'Binner'+t.binner)
+        bins = b.bins_as_fasta(join(t.task_out_dir, 'output/bins'))
+        bint = compute_binning_table(t.task_name, t.target_sample, bins, t.asm_dir)
+        bint.to_csv(join(t.task_out_dir, 'output', 'binning_table.csv'))
+
+def compute_binning_table(task_name, sample, bins, gt_dir):
+    ground_truth = pd.read_csv(join(gt_dir, f'{sample}_gt_table.csv'))
+    ground_truth = ground_truth.loc[ground_truth['sample'] == sample]
+    records = list()
+    for bin in bins:
+        with open(bin) as f:
+            contigs = [get_contig_name(e) for e in f if e.startswith('>')]
+            records += [
+                (task_name, sample, f'{sample}-{e}', remove_fasta_ext(basename(bin)), e) 
+                for e in contigs
+            ]
+    # filter for contigs that have been measured
+    binned_contigs = pd.DataFrame(records, columns=['task_name', 'sample', 'key', 'bin', 'contig'])
+    binned_contigs = binned_contigs.loc[binned_contigs.key.isin(ground_truth.key), :]
+    binned_contigs.drop(['sample', 'task_name', 'contig'],axis=1,inplace=True) # which contigs are in which bins
+
+    # build binning table from ground truth
+    binning_table = ground_truth[
+        ['contig','contig_length','genome', 'sample', 'key','is_isolate', 'ref', 'ref_start', 'ref_end', 'genome_length']
+    ].drop_duplicates()
+
+    prod = pd.merge(binning_table, binned_contigs, on='key', how='outer')
+    prod['representative_bin'] = prod.genome.map(prod.groupby('genome').apply(genome2bin_map))
+    # compute TP
+    prod['contig_in_repr_bin'] = prod.bin == prod.representative_bin
+    tp = prod.groupby(['genome','key']).apply(lambda x: x.contig_in_repr_bin.any()).reset_index().rename({0:'TP'},axis=1)
+    fn = prod.groupby(['genome','key']).apply(lambda x: not x.contig_in_repr_bin.any()).reset_index().rename({0:'FN'},axis=1)
+    binning_table = binning_table.merge(tp,on=['genome','key'])
+    binning_table = binning_table.merge(fn,on=['genome','key'])
+    binning_table['FP'] = False
+    # Computing FP is more involved.
+    fp = prod.groupby('bin').apply(compute_fp).reset_index(drop=True)
+    fp['FP'] = True
+    fp['TP'] = False 
+    fp['FN'] = False
+    # add isolate information to the genome
+    isomap = ground_truth[['genome','is_isolate']].drop_duplicates()
+    isomap.index=isomap.genome
+    isomap.drop('genome',axis=1,inplace=True)
+    fp['is_isolate'] = fp.genome.map(isomap.is_isolate)
+    binning_table = pd.concat([binning_table, fp])
+
+    # add back the representative bin of each genom
+    reprmap = prod[['genome', 'representative_bin']].drop_duplicates()
+    reprmap.index = reprmap.genome
+    reprmap.drop('genome',axis=1,inplace=True)
+    binning_table['representative_bin'] = binning_table.genome.map(reprmap.representative_bin)
+    binning_table['task_name'] = task_name
+    # First compute FP for genomes that have a bin representation
+    return binning_table
+
+def genome2bin_map(bt, use_genome_coverage=True):
+    # for each contig in the bin, get the set of genomes it maps to
+    if use_genome_coverage:
+        # calculate the genome coverage along each chunk of the reference genome
+        # that is found in the bin
+        bin_sum = bt.groupby(['bin', 'ref'], dropna=False).apply(calculate_coverage).reset_index()
+        # sum up over the bins
+        bin_sum = bin_sum.groupby('bin', dropna=False)[0].sum()
+    else:
+        bin_sum = bt.groupby('bin',dropna=False).contig_length.sum()
+    if bin_sum.index.notna().any():
+        return bin_sum[bin_sum.index.notna()].idxmax()
+    else:
+        return pd.NA
+
+def calculate_coverage(intervals):
+    s = intervals.sort_values("ref_start")[["ref_start", "ref_end"]].to_numpy()
+    total = 0
+    cur_s, cur_e = s[0]
+    cur_s, cur_e = (cur_s, cur_e) if cur_s < cur_e else (cur_e, cur_s)
+    for start, end in s[1:]:
+        start, end = (start, end) if start < end else (end, start)
+        if start > cur_e:
+            total += cur_e - cur_s
+            cur_s, cur_e = start, end
+        else:
+            cur_e = max(cur_e, end)
+    return total + (cur_e - cur_s)
+
+def compute_fp(df):
+    # select for contigs from genomes that are represented by the bin.
+    # A contig could be in a bin where the contig comes from a genome that the bin does not represent
+    # and it should be counted as a false positive for the genome the bin does represent.
+    filt=df.groupby('genome').filter(lambda x: all(x['bin'] == x['representative_bin']))
+    if filt.empty:
+        return pd.DataFrame(columns=['genome','contig','contig_length','sample','key'])
+    fps=filt.groupby('genome').apply(lambda x: df[~df.key.isin(x.key)])
+    fps.drop('genome',axis=1,inplace=True)
+    fps=fps.reset_index()
+    fps.drop('level_1',axis=1,inplace=True)
+    return fps[['genome','contig','contig_length','sample','key', 'ref', 'ref_start', 'ref_end', 'genome_length']].drop_duplicates()
+
 def task_done(bntsk, stage='all', report=False, only_not_done=False, clear=False):
+    # TODO ADD QC STAGE, and BIN TABLE STAGE
     if stage == 'all' or stage == 'prep':
         spec = json.loads(bntsk.prep_spec)
         task_out_dir = spec['task_out_dir']

@@ -3,14 +3,17 @@ import os
 from os.path import join, exists
 import glob
 from pathlib import Path
+from itertools import product
 
 from .config import Config
 from . import database as db
 from . import mirror_specs as ms
 from . import simulation as sm
+from . import evaluation as ev
 from .tasks import assembly as ab, binning as bn, quality_control as qc, task_utils as tu
 from . import ground_truth as gt 
-from .utils import manifest_get, parse_manifest
+from .utils import manifest_get, parse_manifest, run_R_script
+from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
 
 
 class Project:
@@ -20,25 +23,34 @@ class Project:
         self.config = config
 
     @classmethod
-    def create_empty(cls, name: str, path: Path):
+    def create_empty(cls, name: str, path: Path, use_api: str):
         project_path = path / name
         project_path.mkdir(parents=True)
-        config = Config(project_name=name, project_base=str(project_path))
+        config = Config(project_name=name, project_base=str(project_path), use_api=use_api)
         config.to_yaml(project_path)
-        config.verify_config()
 
     @classmethod
     def create(cls, name: str, path: Path, config: Config) -> "Project":
         project_path = path / name
         project_path.mkdir(parents=True)
-        config.verify_config()
         return cls(project_path, config) 
 
     @classmethod
-    def load(cls, project_path: Path) -> "Project":
+    def load(cls, project_path: Path, verify=True) -> "Project":
         config = Config.from_yaml(project_path / "config.yaml")
-        config.verify_config()
+        if verify:
+            config.verify_config()
         return cls(project_path, config)
+
+    def build_project(self):
+        # Verify the configuration 
+        self.config.verify_config()
+        os.makedirs(self.config.maggie_db_dir, exist_ok=True)
+        os.makedirs(self.config.simulation_dir, exist_ok=True)
+        os.makedirs(self.config.simulation_dir, exist_ok=True)
+        os.makedirs(self.config.bintask_dir, exist_ok=True)
+        os.makedirs(self.config.evaluation_dir)
+
     
     def make_database(self, threads=32, ani=0.98, c=200, write_to_disk=False):
         """
@@ -143,6 +155,54 @@ class Project:
         manifest = parse_manifest(self.config.manifest)
         tu.run_bin_tasks(manifest, run_only, force_prep, force_bin, threads)
 
-    def run_wrap(self, run_only, force_prep, force_bin, threads=8):
+    def run_refine(self, run_only, force_refine, threads=8):
         manifest = parse_manifest(self.config.manifest)
-        tu.run_wrap_tasks(manifest, run_only, force_prep, force_bin, threads)
+        tu.run_refine_tasks(manifest, run_only, force_refine, threads)
+    
+    def run_quality_control(self, threads=8):
+        manifest = parse_manifest(self.config.manifest)
+        tu.run_quality_control(manifest, threads)
+
+    def calc_per_genome_metrics(self):
+        # Construct the binning table for each binning tasks
+        manifest = parse_manifest(self.config.manifest)
+        tu.construct_binning_tables(manifest)
+
+        # Build the reports. There is a report for each assembler, binner pair. 
+        # A report contains the relevant information (genome, abundance, assigned bin, bin quality control)
+        # for all (assembler, binner)-combo bin tasks. These reports are used to calculate the genome metrics.
+        binners = manifest.binner.unique()
+        assemblers = manifest.assemblers.unique()
+        os.makedirs(self.config.evaluation_dir)
+        for bn, ab in product(binners, assemblers):
+            _mnfst = manifest.loc[(manifest.binner == bn) & (manifest.assembler == ab)]
+            rprt = ev.construct_report(_mnfst, add_cp=False)
+            rprt.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}_REPORT.parquet'))
+
+        # Compute the per-genome metrics
+        for bn, ab in product(binners, assemblers):
+            rprt = pd.read_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}_REPORT.parquet'))
+            gm = ev.construct_genome_metrics(rprt)
+            # these got dropped when constructing the genome metrics, all were doing here is adding them back
+            gm = ev.add_report_data(rprt, gm, manifest)
+            gm.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}.genome_metrics.parquet'))
+    
+    def evaluate_pipelines(self, precision, recall, plots=False):
+        # Write the set of recoverable genome scores to a csv for analysis in R
+        os.makedirs(join(self.config.evaluation_dir, 'LMM'))
+        gmfiles = glob.glob(self.config.evaluation_dir, '*.genome_metrics.parquet')
+        scores, _ = ev.recoverable_genome_set(gmfiles, recall, precision)
+        scores = scores[['binning_mode', 'binner', 'assembler', 'genome', 'sample', 'metric', 'value']]
+        scores.to_csv(join(self.config.evaluation_dir, 'LMM/per_genome_metrics.csv'), index=None)
+
+        # Run the LMM and write output to disk
+        run_R_script('LMM_optimal_mag_pipeline', join(self.config.evaluation_dir, 'LMM'), 'true')
+        # plot data if needed
+        if plots:
+            for by in ['binner', 'binning-mode', 'assembler']:
+                for metric in ['fscore', 'precision', 'recall']:
+                    order = ['MaxBin2', 'VAMB', 'CONCOCT', 'METABAT2', 'SemiBin2', 'COMEBin']
+                    ax = plot_pipeline_performance_model(
+                        pd.read_csv(join(self.config.evaluation_dir, 'LMM', f'all_pipelines_{metric}.csv')), by=by, y_name=metric, order=order
+                    )
+                    plot_unlabelled_version(ax, join(utls.MANU_FIGS, 'Fig2', 'MAG_pipeline_LMM_fscore_binner'),ylower=-0.05, yupper=1.3,show=False)
