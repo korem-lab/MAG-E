@@ -2,6 +2,7 @@ import pandas as pd
 import json
 from pathlib import Path
 import os
+from os.path import join
 import shutil
 import sys
 from subprocess import run
@@ -109,3 +110,6 @@ def parse_fasta(fs, gzipped=False):
         yield Fasta(hdr, ''.join(seq))
         if not line:
             break
+
+def not_empty(file):
+    return os.path.exists(file) and os.path.getsize(file)>0

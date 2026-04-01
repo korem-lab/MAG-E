@@ -1,28 +1,46 @@
 from os.path import join, exists, basename
 import pandas as pd
 import hashlib
+from functools import reduce
 from itertools import product
 import json
 from ..utils import parse_binning_mode_datasets, write_done_flag, rm_dir, get_contig_name, remove_fasta_ext
 from . import assembly as ab, binning as bn, quality_control as qc
-import numpy as np
 
-jd = lambda x: json.dumps(x)
 
-def get_summary_names(refiners):
-    refiner_summary_name = pd.DataFrame(
-        {'refiner':refiner, 'ro':ro, 'pipelines':pipelines} for refiner, ro, pipelines in refiners
-    )
-    summary_names = list()
-    for _, df in refiner_summary_name.groupby('refiner'):
-        df['name'] = np.arange(len(df))
-        summary_names.append(df)
-    refiner_summary_name = pd.concat(summary_names)
+def get_summary_names(data, dtype):
+    assert dtype in ['refiner', 'bn', 'ab']
+    if dtype == 'refiner':
+        summary_names = pd.DataFrame(
+            {'refiner':refiner, 'ro':ro, 'pipelines':pipelines} for refiner, ro, pipelines in data
+        )
+    elif dtype == 'bn':
+        summary_names = pd.DataFrame({'bn': bn, 'bno':bno} for (bn, bno) in data)
+    else:
+        summary_names = pd.DataFrame({'ab': ab, 'abo':abo} for (ab, abo) in data)
+
+    
+    summary_names['sname'] = summary_names.groupby(dtype).cumcount().add(1).astype(str)
+    summary_names['sname'] = summary_names['sname'].apply(lambda x: f'({x})')
+    mask = summary_names.groupby(dtype)[dtype].transform('count') == 1
+    summary_names.loc[mask, 'sname'] = ''
+    return summary_names
 
 def make_manifest(
     assemblers, binners, modes, refiners, qctools, simulation_dir, 
     assembly_cache, bintask_dir, project_base
 ):
+    # make sure they're unique
+    unq = lambda x: list(set(x))
+    assemblers, binners, modes, refiners = unq(assemblers), unq(binners), unq(modes), unq(refiners)
+
+    # There may be multiple assembler, binner, and refiners run with different options
+    # to give these a simple name, which can later be looked up, we construct tables
+    # that map each option to an integer "summary name"
+    rsmry = get_summary_names(refiners, 'refiner')
+    bsmry = get_summary_names(binners, 'bn')
+    asmry = get_summary_names(assemblers, 'sb')
+
     bintask_counter = set()
     assembly_counter = set()
     tasks = list()
@@ -40,6 +58,11 @@ def make_manifest(
             'binning_mode': mode, 'qctools': qctools,
             'is_refiner': False
         }
+
+        # get the summary names for the binning runs
+        spec['assembler_summary_name'] = asmry[(asmry.ab == ab) & (asmry.abo == abo)].sname.item()
+        spec['binner_summary_name'] = bsmry[(bsmry.bn == bn) & (bsmry.bno == bno)].sname.item()
+
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
@@ -48,7 +71,6 @@ def make_manifest(
             spec['asm_dir'] = join(spec['asm_dir'], trgt)
             tasks.append(spec)
 
-    smry = get_summary_names(refiners)
     for (refiner, ro, pipelines) in refiners:
         bintask_counter.add((refiner, ro, tuple(pipelines)))
         spec = {
@@ -57,7 +79,7 @@ def make_manifest(
             'refiner': refiner, 'refiner_options': 'ro', 'pipelines': pipelines
 
         }
-        spec['summary_name'] = smry.loc[(smry.refiner == refiner) & (smry.ro == ro) & (smry.pipelines == pipelines)].name
+        spec['refiner_smry_name'] = rsmry.loc[(rsmry.refiner == refiner) & (rsmry.ro == ro) & (rsmry.pipelines == pipelines)].sname.item()
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
@@ -66,7 +88,7 @@ def make_manifest(
             tasks.append(spec)
             
     for spec in tasks:
-        spec['task_name'] = hashlib.sha256(jd(spec).encode()).hexdigest()
+        spec['task_name'] = hashlib.sha256(json.dumps(spec).encode()).hexdigest()
     tasks = pd.DataFrame(tasks)
 
 def run_assemblies(manifest, threads=8):
@@ -146,21 +168,22 @@ def run_quality_control(manifest, force=False, threads=8):
     for i in range(len(manifest)):
         t = manifest.loc[i,:]
         if force or not task_done(t, stage='qc', clear=True):
+            tables = list()
             for q in t.qc_tools:
-                q = getattr(qc, 'QCTool'+q)
+                q = getattr(qc, q+'QCTool')
                 q.run(**(t.to_dict() + {'threads':threads}))
-        combine_qc_tables(t.qc_tools, t.task_out_dir)
-
-def combine_qc_tables(qc_tools, task_out_dir):
-    assert NotImplementedError
+                tables.append(q.to_qctable(**(t.to_dict() + {'threads':threads})))
+            qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
+            qc_table['task_name'] = t.task_name
+            qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
 
 def construct_binning_tables(manifest):
     for i in range(len(manifest)):
         t = manifest.loc[i,:]
         if t.is_refiner:
-            b = getattr(bn, 'Refiner'+t.refiner)
+            b = getattr(bn, t.refiner+'Refiner')
         else:
-            b = getattr(bin, 'Binner'+t.binner)
+            b = getattr(bin, t.binner+'Binner')
         bins = b.bins_as_fasta(join(t.task_out_dir, 'output/bins'))
         bint = compute_binning_table(t.task_name, t.target_sample, bins, t.asm_dir)
         bint.to_csv(join(t.task_out_dir, 'output', 'binning_table.csv'))

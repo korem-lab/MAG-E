@@ -66,7 +66,6 @@ def construct_genome_metrics(rprt):
     metrics = compute_Fscore_metrics(rprt, ['task_name', 'genome'])
     return metrics
 
-
 def add_report_data(rprt, gm, manifest, qctools, is_wrapper):
 
     # there are per-genome measurements or variables that are important for downstream evaluations
@@ -77,8 +76,8 @@ def add_report_data(rprt, gm, manifest, qctools, is_wrapper):
     gm.drop(
         all_qc_measures + [
             'genome_length', 'genome_abundance', 'genome_n_reads', 'is_isolate',
-            'assembler', 'binning_mode', 'sample', 'assembler_options', 'binner_options', 
-            'refiner', 'refiner_options', 'is_refiner', 'summary_name'
+            'assembler', 'binning_mode', 'sample', 'assembler_options', 'binner_options',
+            'refiner', 'refiner_options', 'is_refiner'
         ], 
         errors='ignore', axis=1, inplace=True
     )
@@ -88,7 +87,7 @@ def add_report_data(rprt, gm, manifest, qctools, is_wrapper):
     # i.e it shouldn't be there. Perhaps a better way to make the report is to make this consistent, relative to the genome studied.
     rprt = rprt[rprt.TP | rprt.FN][
         all_qc_measures + [
-            'genome','task_name','genome_length', 'genome_abundance', 'genome_n_reads', 'is_isolate'
+            'genome','task_name','genome_length', 'genome_abundance', 'genome_n_reads', 'is_isolate',
         ]].drop_duplicates()
     gm.reset_index(drop=True, inplace=True)
     gm = pd.merge(gm,rprt, left_on=['task_name', 'genome'], right_on=['task_name', 'genome'])
@@ -98,9 +97,10 @@ def add_report_data(rprt, gm, manifest, qctools, is_wrapper):
     gm['assembler'] = gm.task_name.map(manifest.assembler)
     gm['sample'] = gm.task_name.map(manifest.target_sample)
     gm['assembler_options'] = gm.task_name.map(manifest.assembler_options)
-    gm['binner'] = manifest.apply(
-        lambda x: x.binner if not x.is_refiner else f'{x.refiner}({x.summary_name})'
-    )
+    gm['binner'] = gm.task_name.map(manifest.apply(
+        lambda x: f'{x.binner}{x.binner_summary_name}' if not x.is_refiner else f'{x.refiner}{x.refiner_summary_name}'
+    ))
+    gm['assembler'] = gm.task_name.map(manifest.apply(lambda x: f'{x.assembler}{x.assembler_summary_name}'))
     gm['binner_options'] =  gm.task_name.map(manifest.apply(lambda x: x.binner_options if not x.is_refiner else x.refiner_options))
     return gm
     
