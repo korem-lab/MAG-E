@@ -18,7 +18,7 @@ python -m maggie initalize-project  /absolute/path/to/maggie/projects/ myproject
 ```
 
 Running `initialize-project` constructs a new project `myproject` at `/absolute/path/to/maggie/projects`
-and, inside the project directory, write a configuration yaml file: 
+and, inside the project directory, writes a configuration yaml file: 
 ```
 (maggie) izaak@dhcp-10-118-17-29 MAG-E % ls ../testingmaggie/myproject 
 config.yaml
@@ -58,7 +58,8 @@ Absolute path to directory containing all gzipped fastq files (prefix `.fastq.gz
 prefix of pair 1, typically either `_R1` or `_1`
 
 - `read_counts`:
-Absolute path to csv file specifying the number of read pairs for each sample.
+Name of the csv file specifying the number of read pairs for each sample. This must be moved
+inside the project directory.
 It should have the format:
 ```
 sample,count
@@ -67,8 +68,9 @@ SampleA,10000
 ```
 
 - `cluster_assignments`:
-This csv species the species-level cluster assignments of each genome that will be compiled into the MAG-E database.
-It has three required fields: `genome`, `StrainRepr`, and `GenomeType`. `genome` is the name 
+The name of the csv, specifying the species-level cluster assignments of each genome in `genomes_dir`. 
+This csv must be moved into the project directory.
+It has three required fields: `genome`, `SpeciesRepr`, and `GenomeType`. `genome` is the name 
 of a genome which must exist at `genomes_dir/<genome>.fasta.gz`. `SpeciesRepr`
 specifies the species-level cluster assignments. Genomes with the `SpeciesRepr` value are in the same cluster, and the `SpeciesRepr` value (which must be a genome `genomes`) acts as the cluster representative.
 `GenomeType` specifies whether the genome is a metagenome-assembled genome, or sequenced as an isolate. 
@@ -100,8 +102,8 @@ we want to try `single`, `all`, `mash20`, and `mash3`, where `all` uses all samp
 `mash20` uses the 20 closest samples to the target defined by mash distance, 
 and `mash3`, which uses the closest 3. To achieve this, you must populate
 binning mode with `['single', 'all', 'mash20', 'mash3']` and in the project directory, place
-the files `all_dataset.csv`, `mash20_dataset.csv`, `mash3_dataset.csv`. 
-These files all have the same format. For example, `mash3_dataset.csv` could look like:
+the files `all_datasets.csv`, `mash20_datasets.csv`, `mash3_datasets.csv`. 
+These files all have the same format. For example, `mash3_datasets.csv` could look like:
 ```
 target_sample,dataset
 sampleA,sampleA
@@ -121,21 +123,41 @@ CONCOCT in `mash20` mode, when run on MEGAHIT assemblies with `--no-bubble` and 
 `qctools` is a list of quality control tools that MAG-E will run on each bin. `qctools` takes a list.
 For example, to run CheckM2 and GUNC, one passes `['CheckM2', 'GUNC']` to qctools.
 
-### Verifying the configuration and building the project.
+### Verifying the project configuration.
 
-After populating the configuration, we make sure its correctly specified: 
+After populating the configuration running:
 ```
-python -m maggie build-project
+python -m maggie verify-project
 ```
-First, this command checks that each file required by MAG-E is available in the config.
-Next, it sets up the core directories within the project:
+Checks that each file required by MAG-E is available in the config, sets up core directories,
 ```
 TODO: LS THE CORE DIRECTORIES
 ```
+and makes sure the assembler, binner, and refiner names specified in the profile match those
+supported by the MAG-E API. This check is only performed if (`use_api` is `yes`), as
+MAG-E supports evaluation of bins without using the API to allow for flexibilty in pipeline evaluation.
+See "Constructing bins for evaluation" for considering whether or not to use API to construct bins.
 
-MAG-E can bin samples using the assemblers, binners, and refiners that are internally supported by its
-API. For flexibility, it can also evaluate bins constructed by means not supported by the API. See "Constructing bins for evaluation" section for the considerations over whether to use the API. 
-If the API is used (`use_api` is `yes`), the verification checks whether the assemblers, binners, and refiners specified in `config.yaml` are supported. To get the list of currently supported tools, run `python -m maggie list-supported`. If `use_api` is `no`, this check is not run. In either case, MAG-E will check whether the quality control tools specified in `config.yaml` are supported. 
+Note how we no longer need to specify the project name or directory? MAG-E caches projects and re-loads the project config to streamline the command line. See "Project caching" below for details. 
+
+### Simulating datasets
+
+To simulate datasets, we firstwe make a MAG-E database of the input genomes. This involves clustering the genomes at the strain level, and constructing a Sylph sketch over them. See `--help` for options.
+```
+python -m maggie make-maggie-db
+```
+
+With the database constructed, we build mirror specifications of each sample, which 
+lists a set of genomes from the database that closely match the sample in ANI and abundance. 
+Specifications provide the input genomes for simulation and the ground truth for MAG-E evaluations.
+```
+python -m maggie make-mirrors
+```
+
+With the specification constructed, we can then simulate metagenomes.
+```
+python -m maggie simulate-mgx
+```
 
 ### Project caching
 
@@ -177,3 +199,13 @@ myproject       /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/tes
 This caching allows MAG-E to switch between multiple projects whilst simplifying the command-line. 
 
 ### Constructing bins for evaluation
+
+MAG-E can bin samples using the assemblers, binners, and refiners that are internally supported by its
+API. For flexibility, it can also evaluate bins constructed by means not supported by the API. See "Constructing bins for evaluation" section for the considerations over whether to use the API. 
+If the API is used (`use_api` is `yes`), the verification checks whether the assemblers, binners, and refiners specified in `config.yaml` are supported. To get the list of currently supported tools, run `python -m maggie list-supported`. If `use_api` is `no`, this check is not run. In either case, MAG-E will check whether the quality control tools specified in `config.yaml` are supported. 
+
+
+
+# Tutorial
+
+First we populate the `config.yaml`.
