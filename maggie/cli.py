@@ -59,15 +59,6 @@ def initialize_project(
     set_project_to_current(name)
 
 @app.command()
-def build_project(
-):
-    "Verifies the config, and populates the project with the required directories."
-    _, directory = get_current_project()
-    project = Project.load(directory, verify=False)
-    project.build_project()
-    project.config.verify_config()
-
-@app.command()
 def get_current():
     "Prints the name and path of the project currently operating on."
     name, dir = get_current_project()
@@ -85,8 +76,17 @@ def reset_cache():
     remove(join(Path(__file__).parent.parent,'.project_cache.tsv'))
 
 @app.command()
+def verify_project(
+):
+    "Verifies the config, and populates the project with the required directories."
+    _, directory = get_current_project()
+    project = Project.load(directory, verify=False)
+    project.build_core_directories()
+    project.config.verify_config()
+
+@app.command()
 def make_maggie_db(
-    threads: int = typer.Option(32, help='Threads to run dRep clustering and sylph'),
+    threads: int = typer.Option(8, help='Threads to run dRep clustering and sylph'),
     ani: float = typer.Option(0.98, help='ANI for strain clustering'),
     c: int = typer.Option(200, help='Sylph sketch density.')
 ):

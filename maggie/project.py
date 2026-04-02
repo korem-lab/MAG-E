@@ -24,35 +24,34 @@ class Project:
 
     @classmethod
     def create_empty(cls, name: str, path: Path, use_api: str):
-        project_path = path / name
+        project_path = join(path ,name)
         project_path.mkdir(parents=True)
         config = Config(project_name=name, project_base=str(project_path), use_api=use_api)
         config.to_yaml(project_path)
 
     @classmethod
-    def create(cls, name: str, path: Path, config: Config) -> "Project":
-        project_path = path / name
+    def create(cls, name: str, path: str, config: Config) -> "Project":
+        project_path = join(path, name)
         project_path.mkdir(parents=True)
         return cls(project_path, config) 
 
     @classmethod
     def load(cls, project_path: Path, verify=True) -> "Project":
-        config = Config.from_yaml(project_path / "config.yaml")
+        config = Config.from_yaml(join(project_path, "config.yaml"))
         if verify:
             config.verify_config()
         return cls(project_path, config)
 
-    def build_project(self):
+    def build_core_directories(self):
         # Verify the configuration 
-        self.config.verify_config()
         os.makedirs(self.config.maggie_db_dir, exist_ok=True)
         os.makedirs(self.config.simulation_dir, exist_ok=True)
         os.makedirs(self.config.simulation_dir, exist_ok=True)
         os.makedirs(self.config.bintask_dir, exist_ok=True)
-        os.makedirs(self.config.evaluation_dir)
+        os.makedirs(self.config.evaluation_dir, exist_ok=True)
 
     
-    def make_database(self, threads=32, ani=0.98, c=200, write_to_disk=False):
+    def make_database(self, threads=8, ani=0.98, c=200, write_to_disk=False):
         """
         Makes the MAG-E database from the input genomes. 
         
@@ -60,10 +59,10 @@ class Project:
         genome matches are used to construct the mirror specification of the sample.
         """
         # make the directory housing the MAG-E database
-        os.makedirs(self.config.maggie_db_dir)
+        os.makedirs(self.config.maggie_db_dir, exist_ok=True)
 
         # the database table will be built up from the user-specified cluster assignments
-        db_table = pd.read_csv(self.config.cluster_assignments, index=None)
+        db_table = pd.read_csv(self.config.cluster_assignments)
         db.check_genome_files_exist(db_table.genome, self.config.genomes_dir)
 
         # Cluster the genomes at the strain level
@@ -74,14 +73,14 @@ class Project:
 
         # build syldb of species representatives
         reprs = db_table.FileLocation[db_table.isSpeciesRepr]
-        db.construct_sylphdb(reprs, db_prefix='repr', t=threads,c=c,force=True)
+        db.construct_sylphdb(reprs, self.config.maggie_db_dir, db_prefix='repr', t=threads, c=c, force=True)
 
         # build sylphdb of all genomes
         all_genomes = db_table.FileLocation
-        db.construct_sylphdb(all_genomes, db_prefix='all', t=threads,c=c, force=True)
+        db.construct_sylphdb(all_genomes, self.config.maggie_db_dir, db_prefix='all', t=threads, c=c, force=True)
 
         if write_to_disk:
-            db_table.to_csv(self.config.maggie_db_md)
+            db_table.to_csv(self.config.maggie_db_md, index=None)
         return db_table
     
     def make_mirrors(self, threads, c):

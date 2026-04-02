@@ -12,13 +12,13 @@ def run_strain_clustering(genomes, genome_dir, drep_dir, threads, ani):
     Cluster genomes at the strain level. Currently this is done with dRep.
     """
     # construct the database
-    os.makedirs(join(drep_dir, 'strain_dreps'))
+    os.makedirs(join(drep_dir), exist_ok=True)
     for sprp, spdf in genomes.groupby('SpeciesRepr'):
          # avoid clustering singlets
          if len(spdf) == 1:
              continue
          gnm_str = ' '.join([f'{genome_dir}/{e}.fasta.gz' for e in spdf.genome])
-         cmd = f'dRep dreplicate {drep_dir}/strain_dreps/dRep_{sprp} -g {gnm_str} -p {threads} --S_ani {ani} --ignoreGenomeQuality'
+         cmd = f'dRep dereplicate {drep_dir}/dRep_{sprp} -g {gnm_str} -p {threads} --S_ani {ani} --ignoreGenomeQuality'
          run(cmd, shell=True)
 
 def get_dRep_cluster_info(grep, drep_dir):
