@@ -20,10 +20,14 @@ class Config:
     read_counts: str = 'NULL' # you have to place this in the project directory after its constructed 'project_base/read_counts.csv'
     contig_properties: str = 'NULL'
     prefix1: str  = 'NULL'
-    assemblers: list = field(default_factory=lambda: [('ASM', 'OPT'), ('ASM', 'OPT')])
-    binners: list = field(default_factory=lambda: [('BIN', 'OPT'), ('BIN', 'OPT')])
+    assemblers: list = field(default_factory=lambda: [['ASM', 'OPT'], ['ASM', 'OPT']])
+    binners: list = field(default_factory=lambda: [['BIN', 'OPT'], ['BIN', 'OPT']])
     binning_modes: list =  field(default_factory=lambda: ['MODE', 'MODE'])# for example ['single', 'all', 'mash20', 'mash5']. Need files 'project_base/all_datasets.csv', 'project_base/mash20_datasets.csv' that you need to put there
-    refiners: list = field(default_factory=lambda: [('REFN', (('ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE'), ('ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE')))])
+    refiners: list = field(default_factory=lambda: 
+        [
+           ['REFN', [['ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE'], ['ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE']]]
+        ]
+    )
     qctools: list = field(default_factory=lambda: ['NULL', 'NULL'])
 
     @classmethod

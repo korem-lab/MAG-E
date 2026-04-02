@@ -36,8 +36,8 @@ def parse_maggie_db(file):
         
 def parse_read_counts(file):
     df = pd.read_csv(file)
-    assert ['samples', 'count'] == df.columns
-    df.set_index('samples',inplace=True)
+    assert ['sample', 'count'] == df.columns
+    df.set_index('sample',inplace=True)
     return df
 
 def parse_binning_mode_datasets(file):

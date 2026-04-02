@@ -24,7 +24,7 @@ def add_new_project_to_cache(name, directory):
     else:
         df = pd.read_csv(cache_name, sep='\t')
         assert df[(df.name == name)].empty, Exception(f'Project already exists with name {name}, pick another name.')
-        df.loc[len(df), :] = [name, directory, False]
+        df.loc[len(df)] = [name, directory, False]
     df.to_csv(cache_name, sep='\t', index=None)
 
 def set_project_to_current(name):
@@ -48,8 +48,8 @@ def get_current_project():
 
 @app.command()
 def initialize_project(
-    name: str = typer.Argument(..., help="New MAG-E project name."),
     directory: Path = typer.Argument(..., help="Project directory."),
+    name: str = typer.Argument(..., help="New MAG-E project name."),
     use_api: str = typer.Option('yes', help="Will use API classes only (yes), not at all (no), or when available (when_possible)")
 ):
     "Creates new project with an empty configuration file."
