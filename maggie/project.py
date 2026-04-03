@@ -91,13 +91,13 @@ class Project:
         # Make a Sylph sketch (paired.sylsp) of each sample.
         ms.construct_sylphsp(self.config.samples_dir, self.config.sylsp_dir, self.config.prefix1, t=threads,c=c)
 
-        # Sylph query and profile each sample.
-        ms.sylph_profile(self.config.sylsp_dir, self.config.maggie_db_dir, self.config.simulation_dir, t=threads)
-        ms.sylph_query(self.config.sylsp_dir, self.config.maggie_db_dir, self.config.simulation_dir, t=threads)
+        ## Sylph query and profile each sample.
+        ms.sylph_profile(self.config.sylsp_dir, self.config.maggie_db_dir, self.config.simulation_dir, 'repr', t=threads)
+        ms.sylph_query(self.config.sylsp_dir, self.config.maggie_db_dir, self.config.simulation_dir, 'all', t=threads)
 
         # Collect the Sylph results, and construct the mirror specifications.
-        profiles = glob.glob(join(self.config.simulation_dir, '*_sylph_profiles.tsv'))
-        queries = glob.glob(join(self.config.simulation_dir, '*_sylph_query.tsv'))
+        profiles = sorted(glob.glob(join(self.config.simulation_dir, '*_sylph_profile.tsv')))
+        queries = sorted(glob.glob(join(self.config.simulation_dir, '*_sylph_query.tsv')))
         for profile, query in zip(profiles, queries):
             ms.construct_metagenomic_specification(self.config.simulation_dir, self.config.maggie_db_md, profile, query)
 

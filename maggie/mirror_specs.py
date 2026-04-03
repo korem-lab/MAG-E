@@ -2,7 +2,8 @@ import glob
 import pandas as pd
 import numpy as np
 from pandas.api.types import CategoricalDtype
-from os.path import join
+from os.path import join, basename
+from os import makedirs
 from subprocess import run
 
 def construct_sylphsp(reads_dir, sylphsp_dir, prefix1, c=200, t=8):
@@ -10,6 +11,7 @@ def construct_sylphsp(reads_dir, sylphsp_dir, prefix1, c=200, t=8):
     For all paired-end samples within a directory (must be gziped with .fastq.gz prefix)
     construct a Sylph Sample sketch (.paired.sp).
     """
+    makedirs(sylphsp_dir, exist_ok=True)
     prefix2 = prefix1.replace('1', '2')
     r1_reads = sorted(glob.glob(join(reads_dir, f'*_{prefix1}.fastq.gz')))
     r2_reads = sorted(glob.glob(join(reads_dir, f'*_{prefix2}.fastq.gz')))
@@ -19,7 +21,7 @@ def construct_sylphsp(reads_dir, sylphsp_dir, prefix1, c=200, t=8):
     r1_reads = ' '.join(r1_reads)
     r2_reads = ' '.join(r2_reads)
     bases_str = ' '.join(sylph_bases)
-    cmd = f'sylph sketch -1 {r1_reads} -2 {r2_reads} -S {bases_str} -c {c} -t {t} -d {reads_dir}'
+    cmd = f'sylph sketch -1 {r1_reads} -2 {r2_reads} -S {bases_str} -c {c} -t {t} -d {sylphsp_dir}'
     run(cmd, shell=True)
     return [f'{e}.paired.sylsp' for e in sylph_bases]
 
@@ -27,7 +29,7 @@ def sylph_profile(sylsp_dir, maggie_db_dir, sim_dir, db_prefix, t=8):
     run(f'sylph profile {sylsp_dir}/*.sylsp {maggie_db_dir}/{db_prefix}.syldb -t {t} -o {sim_dir}/sylph_profile.tsv',shell=True)
     # make per-sample files for easier loading
     for sample, df in pd.read_csv(f'{sim_dir}/sylph_profile.tsv', sep='\t').groupby('Sample_file'):
-        sample_prof = join(sim_dir, f'{sample}_sylph_profile.tsv')
+        sample_prof = join(sim_dir, f'{basename(sample)}_sylph_profile.tsv')
         df.to_csv(sample_prof, sep='\t', index=None)
     return join(sim_dir, 'sylph_profile.tsv')
 
@@ -35,7 +37,7 @@ def sylph_query(sylsp_dir, maggie_db_dir, sim_dir, db_prefix, t=8):
     run(f'sylph query --minimum-ani 95 {sylsp_dir}/*.sylsp {maggie_db_dir}/{db_prefix}.syldb -t {t} -o {sim_dir}/sylph_query.tsv', shell=True)
     # make per-sample files for easier loading
     for sample, df in pd.read_csv(f'{sim_dir}/sylph_query.tsv', sep='\t').groupby('Sample_file'):
-        sample_prof = join(sim_dir, f'{sample}_sylph_query.tsv')
+        sample_prof = join(sim_dir, f'{basename(sample)}_sylph_query.tsv')
         df.to_csv(sample_prof, sep='\t', index=None)
     return join(sim_dir, 'sylph_query.tsv')
 
@@ -50,7 +52,7 @@ def select_genomes(df, ani=99.8, ci_lower=99.5, max_strains=3):
         # tertiary cluster as evidence of multiple strains. In this case, pick a random 
         # genome from each match in a different tertiary cluster to replicate strain variability. 
         # Prefer isolates when possible.
-        df_filt = df_filt.groupby('StrainCID',group_keys=False).apply(lambda x: x.sort_values(['Genome_type', 'N50', 'Adjusted_ANI'], ascending=False).iloc[0]).reset_index(drop=True)
+        df_filt = df_filt.groupby('StrainCID',group_keys=False).apply(lambda x: x.sort_values(['GenomeType', 'N50', 'Adjusted_ANI'], ascending=False).iloc[0]).reset_index(drop=True)
         if max_strains is not None and len(df_filt) > max_strains:
             df_filt = df_filt.iloc[:max_strains,:]
         # Should multiple strains be present, set their abundances to a log-normal distribtion, summing to the species level abundance
@@ -61,7 +63,7 @@ def select_genomes(df, ani=99.8, ci_lower=99.5, max_strains=3):
         return df_filt
     else:
         # if nothing matches at 99.8 with high confidence, take the single genome with the highest ANI
-        df = df.sort_values(['Genome_type', 'Adjusted_ANI', 'N50'], ascending=False).iloc[0]
+        df = df.sort_values(['GenomeType', 'Adjusted_ANI', 'N50'], ascending=False).iloc[0]
         df['StrainAbund'] = df.SpeciesAbund
         df['StrainAbundUnscaled'] = 1.0
         return pd.DataFrame(df).T
@@ -76,7 +78,7 @@ def construct_metagenomic_specification(sim_dir, db_table, prof, query):
     # add cluster info to the query ANI measurements 
     db_table = pd.read_csv(db_table)
     cat_dtype = CategoricalDtype(categories=['MAG', 'Isolate'], ordered=True)
-    db_table.Genome_type = db_table.Genome_type.astype(cat_dtype)
+    db_table.GenomeType = db_table.GenomeType.astype(cat_dtype)
     query = query.groupby('Sample_file',group_keys=False).apply(lambda qry: pd.merge(qry, db_table, on='genome')).reset_index()
     query.drop('index', axis=1, inplace=True)
 
@@ -115,5 +117,5 @@ def construct_metagenomic_specification(sim_dir, db_table, prof, query):
     # Set range to 0-1 (rather than 0-100)
 
     # set paths to absolute
-    sample = specs.Sample_file.iloc[0]
+    sample = basename(specs.Sample_file.iloc[0])
     specs.to_csv(join(sim_dir, f'{sample}_metagenome_spec.csv'), index=None)

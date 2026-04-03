@@ -1,11 +1,13 @@
 import pandas as pd
 import json
+import gzip
 from pathlib import Path
 import os
 from os.path import join
 import shutil
 import sys
 from subprocess import run
+
 
 def run_R_script(script, *args):
     cmd = f'Rscript {script}.R {" ".join(args)}'
@@ -113,3 +115,14 @@ def parse_fasta(fs, gzipped=False):
 
 def not_empty(file):
     return os.path.exists(file) and os.path.getsize(file)>0
+
+def n50(file, gz=False):
+    fin = open(file) if not gz else gzip.open(file)
+    lens = [len(fa.seq) for fa in parse_fasta(fin, gz)]
+    lens = sorted(lens, reverse=True)
+    half_sum = sum(lens)/2
+    s = 0 
+    for i in range(len(lens)):
+        s += lens[i]
+        if s >= half_sum:
+            return lens[i]

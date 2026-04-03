@@ -100,7 +100,7 @@ def make_maggie_db(
 
 @app.command()
 def make_mirrors(
-    threads: int = typer.Option(32, help='Threads to run dRep clustering and sylph'),
+    threads: int = typer.Option(8, help='Threads to run dRep clustering and sylph'),
     c: int = typer.Option(200, help='Sylph sketch density.')
 ):
     """
@@ -112,7 +112,7 @@ def make_mirrors(
 
 @app.command()
 def simulate_mgx(
-    threads: int = typer.Option(32, help='Threads to run InSilicoSeq'),
+    threads: int = typer.Option(8, help='Threads to run InSilicoSeq'),
     n_reads: str = typer.Option('auto', help='Number of reads to simulate for each sample. Default matches the sample.')
 ):
     """

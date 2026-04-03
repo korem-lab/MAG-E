@@ -44,28 +44,34 @@ def get_dRep_cluster_info(grep, drep_dir):
 
 def build_database_table(database, genomes_dir, drep_dir):
 
+    database['SpeciesCID'] = database.SpeciesRepr
+    database['isSpeciesRepr'] = database.genome.isin(database.SpeciesRepr)
     # get the genome representatives of species clusters >= 2
     greprs = database.SpeciesRepr.value_counts()[database.SpeciesRepr.value_counts() > 1].index.to_series()
+    if not greprs.empty:
+        # get the strain cluster info
+        strain_cluster_info = greprs.apply(lambda x: get_dRep_cluster_info(x, drep_dir)).to_list()
+        strain_cluster_info = [e for e in strain_cluster_info if e is not None]
+        strain_cluster_info = pd.concat(strain_cluster_info)
 
-    # get the strain cluster info
-    strain_cluster_info = greprs.apply(lambda x: get_dRep_cluster_info(x, drep_dir)).to_list()
-    strain_cluster_info = [e for e in strain_cluster_info if e is not None]
-    strain_cluster_info = pd.concat(strain_cluster_info)
+        # Add strain info to database
+        database = pd.merge(database, strain_cluster_info, left_on='genome', right_on='genome', how='outer')
+        # NA if the species was a singlet, so there was no strain clustering performed. 
+        # In this case, the singlet is both the species and strain representatitive, so 
+        # set isStrainRepr to true, and set the StrainCID to '1_1'
+        database['isStrainRepr'] = database['isStrainRepr'].fillna(True)
+        database['StrainCID'] = database['StrainCID'].fillna('1_1')
+        # make a StrainCID globally unique by combining the species and current strain CIDs 
+        database['StrainCID'] = database.apply(lambda x: f'{x.SpeciesCID}:{x.StrainCID}',axis=1)
 
-    # Add strain info to database
-    database['SpeciesCID'] = database.SpeciesRepr
-    database = pd.merge(database, strain_cluster_info, left_on='genome', right_on='genome', how='outer')
-    database['isSpeciesRepr'] = database.genome.isin(database.SpeciesRepr)
-    # NA if the species was a singlet, so there was no strain clustering performed. 
-    # In this case, the singlet is both the species and strain representatitive, so 
-    # set isStrainRepr to true, and set the StrainCID to '1_1'
-    database['isStrainRepr'] = database['isStrainRepr'].fillna(True)
-    database['StrainCID'] = database['StrainCID'].fillna('1_1')
-    # make a StrainCID globally unique by combining the species and current strain CIDs 
-    database['StrainCID'] = database.apply(lambda x: f'{x.SpeciesCID}:{x.StrainCID}',axis=1)
+        # calculate the strain representatives
+        database['StrainRepr'] = database.groupby('StrainCID', group_keys=False).apply(lambda x: pd.Series(x.genome[x.isStrainRepr].values.repeat(len(x)), index=x.index))
+    else:
+        # If empty, then genome is in its own species (and therefore strain) cluster
+        database['isStrainRepr'] = True
+        database['StrainCID'] = database.apply(lambda x: f'{x.SpeciesCID}:1_1', axis=1)
+        database['StrainRepr'] = database.SpeciesCID
 
-    # calculate the strain representatives
-    database['StrainRepr'] = database.groupby('StrainCID', group_keys=False).apply(lambda x: pd.Series(x.genome[x.isStrainRepr].values.repeat(len(x)), index=x.index))
     database['FileLocation'] = database.genome.apply(lambda x: f'{genomes_dir}/{x}.fasta.gz')
 
     return database

@@ -83,12 +83,12 @@ class Config:
         return join(self.maggie_db_dir, 'strain_dreps')
 
     @property
-    def sylsp_dir(self):
-        return join(self.project_base, 'sylsp')
-
-    @property
     def simulation_dir(self):
         return join(self.project_base, 'simulations')
+
+    @property
+    def sylsp_dir(self):
+        return join(self.simulation_dir, 'sylsp')
 
     @property
     def assembly_cache(self):

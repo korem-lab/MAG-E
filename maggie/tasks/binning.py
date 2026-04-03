@@ -349,3 +349,6 @@ class COMEBinBinner:
     def bin_done(self, task_out_dir, **kwargs):
         bin_dir = join(task_out_dir, 'output/bins')
         return bin_done(bin_dir)
+
+class DAS_ToolRefiner:
+    pass
