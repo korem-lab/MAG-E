@@ -70,9 +70,9 @@ SampleA,10000
 - `cluster_assignments`:
 The name of the csv, specifying the species-level cluster assignments of each genome in `genomes_dir`. 
 This csv must be moved into the project directory.
-It has three required fields: `genome`, `SpeciesRepr`, and `GenomeType`. `genome` is the name 
+It has four required fields: `genome`, `SpeciesRepr`, and `GenomeType` and `N50`. `genome` is the name 
 of a genome which must exist at `genomes_dir/<genome>.fasta.gz`. `SpeciesRepr`
-specifies the species-level cluster assignments. Genomes with the `SpeciesRepr` value are in the same cluster, and the `SpeciesRepr` value (which must be a genome `genomes`) acts as the cluster representative.
+specifies the species-level cluster assignments. Genomes with the `SpeciesRepr` value are in the same cluster, the `SpeciesRepr` value (which must be a genome `genomes`) acts as the cluster representative, `N50` is the N50 of each genome fasta.
 `GenomeType` specifies whether the genome is a metagenome-assembled genome, or sequenced as an isolate. 
 Note that, MAG-E will only evaluate performance against the Isolate genomes. An example of the structure for the `cluster_assignments` csv is as follows:
 ```
