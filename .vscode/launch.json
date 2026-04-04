@@ -1,0 +1,82 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "verify-project",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["verify-project"],
+            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "make-maggie-db",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["make-maggie-db"],
+            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "make-mirrors",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["make-mirrors"],
+            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "simulate-mgx",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["simulate-mgx"],
+            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "construct-tasks",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["construct-tasks"],
+            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "get-task-dir",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["get-task-dir", "bin", "ERR1136621", "--assembler", "MEGAHIT", "--binner", "METABAT2", "--binning-mode", "all"],
+            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "run-assembly",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["run-assembly"],
+            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+        },
+    ]
+}

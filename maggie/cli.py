@@ -158,7 +158,7 @@ def get_task_dir(
 
 @app.command()
 def run_assembly(
-    threads: int = typer.Option(32, help='Threads to assemblers')
+    threads: int = typer.Option(8, help='Threads to assemblers')
 ):
     """
     Runs assembly tasks.

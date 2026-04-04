@@ -83,6 +83,6 @@ class metaSPAdesAssembler(Assembler):
         """
         old_fa_name = join(asm_dir, 'contigs.fasta')
         new_fa_name= join(self.get_task_dir(asm_dir), f'{ts}.fasta')
-        rename(old_fa_name, new_fa_name)
-        rm_dir(asm_dir)
+        #rename(old_fa_name, new_fa_name)
+        #rm_dir(asm_dir)
         self.reduce_fasta_header_to_contig_name(new_fa_name)

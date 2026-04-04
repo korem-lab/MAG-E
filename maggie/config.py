@@ -27,7 +27,7 @@ class Config:
     binning_modes: list =  field(default_factory=lambda: ['MODE', 'MODE'])
     refiners: list = field(default_factory=lambda: 
         [
-           ['REFN', [['ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE'], ['ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE']]]
+           ['REFN', 'REFN_OPT', [['ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE'], ['ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE']]]
         ]
     )
     qctools: list = field(default_factory=lambda: ['NULL', 'NULL'])
@@ -42,19 +42,18 @@ class Config:
         return o
 
     def to_yaml(self, path: Path) -> None:
-        with open(path / 'config.yaml', "w") as f:
+        with open(join(path, 'config.yaml'), "w") as f:
             yaml.dump(asdict(self), f, default_flow_style=False)
 
     def verify_config(self):
         """Check whether the configuration file is valid. """
-        all_good = True
-        all_good &= exists(self.project_base)
-        all_good &= exists(self.genomes_dir)
-        all_good &= exists(self.samples_dir)
-        all_good &= exists(self.cluster_assignments)
-        all_good &= exists(self.read_counts)
-        all_good &= 'NULL' not in self.prefix1
-        all_good &= all(exists(join(self.project_base, f'{mode}_datasets.csv')) for mode in self.binning_modes)
+        assert exists(self.project_base)
+        assert exists(self.genomes_dir)
+        assert exists(self.samples_dir)
+        assert exists(self.cluster_assignments)
+        assert exists(self.read_counts)
+        assert 'NULL' not in self.prefix1
+        assert all(exists(join(self.project_base, f'{mode}_datasets.csv')) for mode in self.binning_modes)
 
         # If the api is being used, then make sure every assembly, bin, and refiner class is implemented
         if self.use_api == 'yes':

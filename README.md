@@ -140,7 +140,7 @@ See "Constructing bins for evaluation" for considering whether or not to use API
 
 Note how we no longer need to specify the project name or directory? MAG-E caches projects and re-loads the project config to streamline the command line. See "Project caching" below for details. 
 
-### Simulating datasets
+## Simulating datasets
 
 To simulate datasets, we firstwe make a MAG-E database of the input genomes. This involves clustering the genomes at the strain level, and constructing a Sylph sketch over them. See `--help` for options.
 ```
@@ -158,6 +158,57 @@ With the specification constructed, we can then simulate metagenomes.
 ```
 python -m maggie simulate-mgx
 ```
+## Constructing bins for evaluation
+
+Now we've simulated datasets, we can construct bins using the pipelines specified in `config.yaml`. 
+To do this, we first need to construct a manifest of tasks. 
+```
+python -m maggie construct-tasks
+```
+
+This outputs `manifest.csv` in the project directory, which enumerates all MAG-generation tasks. Each task consists of assembly, followed by binning in a particular mode, followed by potential refinement, and finally quality control. The total number of tasks is the product over this space. For example, say `config.yaml` specified three samples, two assemblers both run with two different options, two binners both run with default options in two binning modes, plus one refiner with its pipeline. That's 3 (sample) x 4 (assembly tasks) x (4 bin tasks) + 3 (sample) x 1 refiner = 51 total tasks. `manifest.csv` contains a row for each task, and each row specifies the task composition and the directories where the output needs to be written for each task in order for MAG-E to run evaluations.
+
+### The task directory structure
+
+Over the product space there is redundancy; all 51 tasks rely on 12 assemblies (3 samples, 4 assembly tasks), and the one refiner relies upon avaiable binning outputs. To avoid redundant computation, MAG-E caches the assemblies such that all downstream tasks can use them, and the refiner will treat the pipelines it integrates over as "cached". For tasks to find the correct cached information, MAG-E relies upon a fixed directory structure, which `construct-tasks` creates. 
+
+Each assembly task has its own directory located in `assembly_cache`, with a subdirectory for each sample. In our example:
+```
+assembly_cache/
+                assembly_task_1/
+                                sample1/
+                                sample2/
+                                sample3/
+                assembly_task_2/
+                                ...
+                assembly_task_3/
+                assembly_task_4/
+```
+Each bin task (there are 17 in our example; 4 (assembler tasks) x 4 (bin tasks) + 1 (refiner)) has a directory in `bintask_dir` with the 
+same structure:
+```
+bintask_dir/
+            bin_task_1/
+                       sample_1/
+...
+            bin_task_17
+```
+
+In order for MAG-E to evaluate pipelines, the output of assembly and bin tasks must be placed in the correct directories. 
+
+### Constructing assemblies and bins
+
+This is where the MAG-E API comes in. By default, `use_api` is `yes` in the `config.yaml`. It can be set to `no` when initializing
+a project. If `yes` MAG-E MAG-E
+
+
+It also writes all directories where the outputs of each MAG-generation task will need to be placed in order for MAG-E to run evaluations. 
+MAG-E can bin samples using the assemblers, binners, and refiners that are internally supported by its
+API. For flexibility, it can also evaluate bins constructed by means not supported by the API. See "Constructing bins for evaluation" section for the considerations over whether to use the API. 
+If the API is used (`use_api` is `yes`), the verification checks whether the assemblers, binners, and refiners specified in `config.yaml` are supported. To get the list of currently supported tools, run `python -m maggie list-supported`. If `use_api` is `no`, this check is not run. In either case, MAG-E will check whether the quality control tools specified in `config.yaml` are supported. 
+
+
+
 
 ### Project caching
 
@@ -197,14 +248,6 @@ myproject       /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/tes
 ```
 
 This caching allows MAG-E to switch between multiple projects whilst simplifying the command-line. 
-
-### Constructing bins for evaluation
-
-MAG-E can bin samples using the assemblers, binners, and refiners that are internally supported by its
-API. For flexibility, it can also evaluate bins constructed by means not supported by the API. See "Constructing bins for evaluation" section for the considerations over whether to use the API. 
-If the API is used (`use_api` is `yes`), the verification checks whether the assemblers, binners, and refiners specified in `config.yaml` are supported. To get the list of currently supported tools, run `python -m maggie list-supported`. If `use_api` is `no`, this check is not run. In either case, MAG-E will check whether the quality control tools specified in `config.yaml` are supported. 
-
-
 
 # Tutorial
 

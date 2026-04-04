@@ -25,7 +25,7 @@ class Project:
     @classmethod
     def create_empty(cls, name: str, path: Path, use_api: str):
         project_path = join(path ,name)
-        project_path.mkdir(parents=True)
+        os.makedirs(project_path, exist_ok=True)
         config = Config(project_name=name, project_base=str(project_path), use_api=use_api)
         config.to_yaml(project_path)
 

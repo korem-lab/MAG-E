@@ -76,7 +76,7 @@ def make_manifest(
             'qctools': qctools, 'simulation_dir': simulation_dir, 'is_refiner': True,
             'refiner': refiner, 'refiner_options': ro, 'pipelines': pipelines
         }
-        spec['refiner_smry_name'] = rsmry.loc[(rsmry.refiner == refiner) & (rsmry.ro == ro) & (rsmry.pipelines == pipelines)].sname.item()
+        spec['refiner_summary_name'] = rsmry.loc[(rsmry.refiner == refiner) & (rsmry.ro == ro) & (rsmry.pipelines == pipelines)].sname.item()
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
@@ -93,16 +93,18 @@ def run_assemblies(manifest, threads=8):
 
     # multiple bintasks can use the sample assembly so first,
     # gather all the unique assembly tasks from the manifest
-    asm_tasks = manifest[['target_sample', 'simulation_dir', 'asm_dir', 'assembler', 'assembler_options']].drop_duplicates()
+    asm_tasks = manifest[~manifest.is_refiner][['target_sample', 'simulation_dir', 'asm_dir', 'assembler', 'assembler_options']].drop_duplicates()
     print('Total assembly tasks: ', len(asm_tasks))
     # run tasks
     for i in range(len(asm_tasks)):
-        t = asm_tasks.loc[i,:]
-        r1 = join(t.simulation_dir, f'{t.target_sample}_1.fastq.gz')
-        r2 = join(t.simulation_dir, f'{t.target_sample}_2.fastq.gz')
-        assembler = getattr(ab, f'{t.assembler}Assembler')
-        assembler.run_assembly(r1, r2, t.asm_dir, threads, t.assembler_options)
-        assembler.clean_up()
+        t = asm_tasks.iloc[i,:]
+        r1 = join(t.simulation_dir, f'{t.target_sample}_R1.fastq.gz')
+        r2 = join(t.simulation_dir, f'{t.target_sample}_R2.fastq.gz')
+        options = '' if t.assembler_options == 'default' else t.assembler_options
+        if t.assembler == 'metaSPAdes': continue
+        assembler = getattr(ab, f'{t.assembler}Assembler')()
+        assembler.run_assembly(r1, r2, t.asm_dir, threads, options)
+        assembler.clean_up(t.target_sample, t.asm_dir)
         assert assembler.assembly_done()
 
 def run_bin_tasks(manifest, run_only=None, force_prep=False, force_bin=False, threads=8):
