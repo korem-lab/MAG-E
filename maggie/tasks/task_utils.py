@@ -39,21 +39,19 @@ def make_manifest(
     # that map each option to an integer "summary name"
     rsmry = get_summary_names(refiners, 'refiner')
     bsmry = get_summary_names(binners, 'bn')
-    asmry = get_summary_names(assemblers, 'sb')
+    asmry = get_summary_names(assemblers, 'ab')
 
     bintask_counter = set()
     assembly_counter = set()
     tasks = list()
-    for (ab, abo), (bn, bno), mode in product([assemblers, binners, modes]):
+    for (ab, abo), (bn, bno), mode in product(assemblers, binners, modes):
 
         # abo and bno are respectively the assembly options and binning options. 
         # For each option copbination, we make a separate directory
         assembly_counter.add((ab, abo))
         bintask_counter.add((ab, abo, bn, bno, mode))
         spec = {
-            'asm_dir': join(assembly_cache, f'assembly_task_{len(assembly_counter)}'),
             'simulation_dir': simulation_dir,
-            'task_out_dir': join(bintask_dir, f'bin_task_{len(bintask_counter)}'),
             'assembler': ab, 'assembler_options': abo, 'binner': bn, 'binner_options': bno,
             'binning_mode': mode, 'qctools': qctools,
             'is_refiner': False
@@ -66,30 +64,30 @@ def make_manifest(
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
-            spec['samples'] = df.dataset.to_list()
-            spec['task_out_dir'] = join(spec['task_out_dir'], trgt)
-            spec['asm_dir'] = join(spec['asm_dir'], trgt)
-            tasks.append(spec)
+            spec['samples'] = [trgt] + list(set(df.dataset.to_list()) - {trgt})
+            spec['task_out_dir'] = join(bintask_dir, f'bin_task_{len(bintask_counter)}', trgt)
+            spec['asm_dir'] = join(assembly_cache, f'assembly_task_{len(assembly_counter)}', trgt)
+            tasks.append(spec.copy())
+
 
     for (refiner, ro, pipelines) in refiners:
         bintask_counter.add((refiner, ro, tuple(pipelines)))
         spec = {
-            'task_out_dir': join(bintask_dir, f'bin_task_{len(bintask_counter)}'), 
             'qctools': qctools, 'simulation_dir': simulation_dir, 'is_refiner': True,
-            'refiner': refiner, 'refiner_options': 'ro', 'pipelines': pipelines
-
+            'refiner': refiner, 'refiner_options': ro, 'pipelines': pipelines
         }
         spec['refiner_smry_name'] = rsmry.loc[(rsmry.refiner == refiner) & (rsmry.ro == ro) & (rsmry.pipelines == pipelines)].sname.item()
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
-            spec['samples'] = df.dataset.to_list()
-            spec['task_out_dir'] = join(spec['task_out_dir'], trgt)
-            tasks.append(spec)
+            spec['samples'] = [trgt] + list(set(df.dataset.to_list()) - {trgt})
+            spec['task_out_dir'] = join(bintask_dir, f'bin_task_{len(bintask_counter)}', trgt)
+            tasks.append(spec.copy())
             
     for spec in tasks:
         spec['task_name'] = hashlib.sha256(json.dumps(spec).encode()).hexdigest()
     tasks = pd.DataFrame(tasks)
+    return tasks
 
 def run_assemblies(manifest, threads=8):
 

@@ -83,7 +83,7 @@ class Project:
             db_table.to_csv(self.config.maggie_db_md, index=None)
         return db_table
     
-    def make_mirrors(self, threads, c):
+    def make_mirrors(self, threads, c, seed):
         """
         Constructs the mirror specifications for each sample. 
         """
@@ -99,18 +99,22 @@ class Project:
         profiles = sorted(glob.glob(join(self.config.simulation_dir, '*_sylph_profile.tsv')))
         queries = sorted(glob.glob(join(self.config.simulation_dir, '*_sylph_query.tsv')))
         for profile, query in zip(profiles, queries):
-            ms.construct_metagenomic_specification(self.config.simulation_dir, self.config.maggie_db_md, profile, query)
+            ms.construct_metagenomic_specification(self.config.simulation_dir, self.config.maggie_db_md, profile, query, seed)
 
-    def simulate_mgx(self, threads, n_reads):
+    def simulate_mgx(self, threads, n_reads, seed):
         """
         Simulated metagenomic data. 
         """
-        specs = sorted(glob.glob(join(self.config.simulation_dir, '*_metagenomic.spec.csv')))
+        specs = sorted(glob.glob(join(self.config.simulation_dir, '*_metagenome_spec.csv')))
         for spec in specs:
             sm.run_InSilicoSeq(
                 spec, self.config.simulation_dir, self.config.read_counts, 
-                self.config.prefix1, n_reads, threads, force=True
+                n_reads, threads, seed=seed, force=False
             )
+        # Final iss cleanup
+        fls = glob.glob(f'{self.config.simulation_dir}*iss.tmp*')
+        for fl in fls:
+            os.remove(fl)
     
     def construct_tasks(self, write_to_disk=False):
         """
@@ -119,18 +123,69 @@ class Project:
 
         # make the manifest
         manifest = tu.make_manifest(
-            self.config.assemblers, self.config.binners, self.config.modes, self.config.qctools,
-            self.config.project_base, self.config.simulation_dir
+            self.config.assemblers, self.config.binners, self.config.binning_modes, self.config.refiners, self.config.qctools,
+            self.config.simulation_dir, self.config.assembly_cache, self.config.bintask_dir, self.config.project_base
         )
 
         # make the core directories for MAG generation. 
-        os.makedirs(self.config.assembly_cache, self.config.bintask_dir)
-        manifest.spec.apply(lambda x: os.makedirs(manifest_get('asm_dir', x), exist_ok=True))
-        manifest.spec.apply(lambda x: os.makedirs(manifest_get('task_out_dir', x), exist_ok=True))
+        os.makedirs(self.config.assembly_cache, exist_ok=True)
+        os.makedirs(self.config.bintask_dir, exist_ok=True)
+        manifest.asm_dir.apply(lambda x: os.makedirs(x, exist_ok=True) if not pd.isna(x) else None)
+        manifest.task_out_dir.apply(lambda x: os.makedirs(x, exist_ok=True))
 
         if write_to_disk:
             manifest.to_csv(join(self.config.project_base, 'manifest.csv'), index=None)
         return manifest
+    
+    def get_task_dir(self, request, sample, assembler, assembler_options, binner, binner_options, refiner, refiner_options, binning_mode, pipelines):
+        """
+        Prints the assembly or bin task director for a task given the options. 
+        """
+
+        manifest = parse_manifest(self.config.manifest)
+        assert request in ['assembly', 'bin'], Exception(f'Request must be either "assembly" or "bin", not {request}.')
+        assert (manifest.target_sample == sample).any(), Exception(f'Sample {sample} not in target samples')
+
+
+        if request == 'assembly':
+            assert (manifest.assembler == assembler).any(), Exception(f'Assembler {assembler} not specified in config.')
+            assert (manifest.assembler_options == assembler_options).any(), Exception(f'Assembler options {assembler_options} not specified in config.')
+            tsks = manifest.loc[
+                (manifest['target_sample'] == sample) & (manifest['assembler'] == assembler) & (manifest['assembler_options'] == assembler_options)
+            ][['asm_dir']].drop_duplicates()
+        else:
+            assert ((assembler and binner and binning_mode) or (refiner and pipelines)), Exception('Must specify an assembler, binner and binning_mode, or a refiner with pipelines')
+            if binner and refiner is None:
+                assert (manifest.assembler ==assembler).any(), Exception(f'Assembler {assembler} not specified in config.')
+                assert (manifest.assembler_options == assembler_options).any(), Exception(f'Assembler options {assembler_options} not specified in config.')
+                assert (manifest.binner == binner).any(), Exception(f'Binner {binner} not specified in config.')
+                assert (manifest.binner_options == binner_options).any(), Exception(f'Binner options {binner_options} not specified in config.')
+                assert (manifest.binning_mode == binning_mode).any(), Exception(f'Binning mode {binning_mode} not specified in config.')
+
+                tsks = manifest.loc[
+                    (manifest['target_sample'] == sample) & (manifest['assembler'] == assembler) & (manifest['assembler_options'] == assembler_options) &
+                    (manifest['binner'] == binner) & (manifest['binner_options'] == binner_options) & (manifest['binning_mode'] == binning_mode)
+                ][['task_out_dir']]
+            elif binner is None and refiner: 
+                assert (manifest.refiner == refiner).any(), Exception(f'Refiner {refiner} not specified in config.')
+                assert (manifest.refiner_options == refiner_options).any(), Exception(f'Refiner options {refiner_options} not specified in config.')
+
+                pipelines = pipelines.split(':')
+                pipelines = tuple(tuple(e.split(',')) for e in pipelines)
+                tsks = manifest.loc[
+                    (manifest['target_sample'] == sample) & (manifest['refiner'] == refiner) & 
+                    (manifest['refiner_options'] == refiner_options) & (manifest['pipelines'] == pipelines)
+                ][['task_out_dir']]
+            else:
+                raise Exception("Invalid combination.")
+
+        if tsks.empty:
+            raise Exception("Invalid combination. There are no tasks.")
+        elif len(tsks) > 1:
+            raise Exception("Input combination is underspecified. More than one assembly tasks shares that combination.")
+        else:
+            print(tsks.iloc[0,0], flush=True, end='')
+            return(tsks.iloc[0,0])
 
     def run_assembly(self, threads):
         """

@@ -1,6 +1,7 @@
 import pandas as pd
 import json
 import gzip
+import ast
 from pathlib import Path
 import os
 from os.path import join
@@ -38,13 +39,13 @@ def parse_maggie_db(file):
         
 def parse_read_counts(file):
     df = pd.read_csv(file)
-    assert ['sample', 'count'] == df.columns
+    assert ['sample', 'count'] == df.columns.to_list()
     df.set_index('sample',inplace=True)
     return df
 
 def parse_binning_mode_datasets(file):
     df = pd.read_csv(file)
-    assert ['target_sample', 'dataset'] == df.columns
+    assert ['target_sample', 'dataset'] == df.columns.to_list()
     return df
 
 def parse_quality_control_table(file):
@@ -53,9 +54,13 @@ def parse_quality_control_table(file):
 
 def parse_manifest(file):
     df = pd.read_csv(file)
+    df.fillna({'assembler_summary_name':'', 'binner_summary_name':'', 'refiner_summary_name':''}, inplace=True)
+    df.qctools = df.qctools.apply(ast.literal_eval)
+    df.samples = df.samples.apply(ast.literal_eval)
+    df.pipelines = df.pipelines.apply(lambda x: ast.literal_eval(x) if type(x) == str else x)
     return df
 
-def decompress(genomes, exe='pigz'):
+def decompress(genomes, exe='unpigz'):
     run(f'{exe} -f {genomes}', shell=True)
 
 def compress(genomes, exe='pigz'):
@@ -126,3 +131,8 @@ def n50(file, gz=False):
         s += lens[i]
         if s >= half_sum:
             return lens[i]
+
+def tupleize(obj):
+    if isinstance(obj, list):
+        return tuple(tupleize(item) for item in obj)
+    return obj

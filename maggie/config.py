@@ -3,7 +3,9 @@ from os.path import join, exists
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 import yaml
+from .utils import tupleize
 from .tasks import quality_control, assembly, binning
+
 
 def represent_list(dumper, data):
     return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
@@ -60,7 +62,7 @@ class Config:
                 assert hasattr(assembly, ab+'Assembler')
             for bn,_ in self.binners:
                 assert(hasattr(binning, bn+'Binner'))
-            for rf, pipeline in self.refiners:
+            for rf, _, pipeline in self.refiners:
                 assert(hasattr(binning, rf+'Refiner'))
                 for (ab, _, bn, _, _) in pipeline:
                     assert(hasattr(assembly, ab+'Assembler'))
@@ -69,6 +71,10 @@ class Config:
         # Make sure the quality control API is implemented 
         for q in self.qctools:
             assert hasattr(quality_control, q+'QCTool')
+        
+        self.assemblers = [tupleize(e) for e in self.assemblers]
+        self.binners = [tupleize(e) for e in self.binners]
+        self.refiners = [tupleize(e) for e in self.refiners]
 
     @property
     def maggie_db_dir(self):

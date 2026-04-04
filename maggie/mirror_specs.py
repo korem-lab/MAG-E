@@ -68,7 +68,8 @@ def select_genomes(df, ani=99.8, ci_lower=99.5, max_strains=3):
         df['StrainAbundUnscaled'] = 1.0
         return pd.DataFrame(df).T
 
-def construct_metagenomic_specification(sim_dir, db_table, prof, query):
+def construct_metagenomic_specification(sim_dir, db_table, prof, query, seed):
+    np.random.seed(seed)
     # load query and profile
     prof = pd.read_csv(prof, delimiter='\t')
     query = pd.read_csv(query, delimiter='\t')

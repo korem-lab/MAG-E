@@ -101,26 +101,28 @@ def make_maggie_db(
 @app.command()
 def make_mirrors(
     threads: int = typer.Option(8, help='Threads to run dRep clustering and sylph'),
-    c: int = typer.Option(200, help='Sylph sketch density.')
+    c: int = typer.Option(200, help='Sylph sketch density.'),
+    seed: int = typer.Option(37, help='Random seed value for strain abundance draws.')
 ):
     """
     Constructs a mirror specification for each sample in the directory.
     """
     _, directory = get_current_project()
     project = Project.load(directory)
-    project.make_mirrors(threads, c)
+    project.make_mirrors(threads, c, seed)
 
 @app.command()
 def simulate_mgx(
     threads: int = typer.Option(8, help='Threads to run InSilicoSeq'),
-    n_reads: str = typer.Option('auto', help='Number of reads to simulate for each sample. Default matches the sample.')
+    n_reads: str = typer.Option('auto', help='Number of reads to simulate for each sample. Default matches the sample.'),
+    seed: int= typer.Option(37, help='Random seed value passed to insilico seq')
 ):
     """
     Simulated metagenomes using the mirror specifications.
     """
     _, directory = get_current_project()
     project = Project.load(directory)
-    project.simulate_mgx(threads, n_reads)
+    project.simulate_mgx(threads, n_reads, seed)
 
 @app.command()
 def construct_tasks(
@@ -131,6 +133,28 @@ def construct_tasks(
     _, directory = get_current_project()
     project = Project.load(directory)
     project.construct_tasks(write_to_disk=True)
+
+@app.command()
+def get_task_dir(
+    request: str = typer.Argument(..., help='Either "assembly_task" or "bin_task"'),
+    sample: str = typer.Argument(...,help='Target sample.'),
+    assembler: str = typer.Option(None, help='Name of assembler.'),
+    assembler_option: str = typer.Option('default', help='Option string for assembler'),
+    binner: str = typer.Option(None, help='Name of binner.'),
+    binner_option: str = typer.Option('default', help='Option string for assembler'),
+    refiner: str = typer.Option(None, help='Name of refiner.'),
+    refiner_option: str = typer.Option('default', help='Option string for assembler'),
+    binning_mode: str = typer.Option(None, help='Binning mode'),
+    pipelines: str = typer.Option(None, help='String specifying the refiner pipelines.')
+):
+    """
+    Prints either the assembly task directory or the bin task directory 
+    associated with a particular MAG pipeline combination. 
+    """
+    _, directory = get_current_project()
+    project = Project.load(directory)
+    project.get_task_dir(request, sample, assembler, assembler_option, binner, binner_option, refiner, refiner_option, binning_mode, pipelines)
+    
 
 @app.command()
 def run_assembly(
