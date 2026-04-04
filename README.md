@@ -6,7 +6,7 @@ This readme provides an explaination of how to run MAG-E on real metagenomic dat
 - Construct realistic simulations of the dataset
 - Evaluate MAG-generation pipelines on the simulated dataset dataset
 ## Installation
-
+We gotta pip install InSilicoSeq
 ## Setting up new projects
 
 MAG-E operates over project directories, which have a specific structure and contents.
@@ -116,8 +116,8 @@ sampleB,sampleE
 In this case, when running pipelines with `mash3`, MAG-E will supply only the samples A,B,C when binning the target sample A with the various specified binners.
 
 - `refiners`:
-`refiners` has a more complex structure. A binning refiner integrates binning outputs (each coming from potentially different pipleines) into a final output. `refiners` takes a list, each element of which has a `[REFN, [PIPELINES]]` structure, where `REFN` is the refiner name, and `PIPELINES` is a list of pipelines that the refiner will integrate over. For example, one may wish to evaluate DAS Tool integrated over 
-CONCOCT in `mash20` mode, when run on MEGAHIT assemblies with `--no-bubble` and `--min-count 5` parameters, and METABAT2 in `single` mode, when run on default metaSPAdes assemblies. This is encoded in the element `['DAS_Tool', [['MEGAHIT', '--no-bubble --min-count 5', 'CONCOCT', 'default', 'mash20'], ['metaSPAdes', 'default', 'METABAT2', 'default', 'single']]]`. We may also wish to evaluate DAS Tool with, say, CONCOCT and METABAT2 both run in `single` mode, on default MEGAHIT. Together the complete refiners list would look like `[['DAS_Tool', [['MEGAHIT', '--no-bubble --min-count 5', 'CONCOCT', 'default', 'mash20'], ['metaSPAdes', 'default', 'METABAT2', 'default', 'single']]], ['DAS_Tool',[['MEGAHIT', 'default', 'CONCOCT', 'default', 'single'], ['MEGAHIT', 'default', 'METABAT2','default', 'single']]]]`. A bit cumbersome..., but, hopefully straightforward. 
+`refiners` has a more complex structure. A binning refiner integrates binning outputs (each coming from potentially different pipleines) into a final output. `refiners` takes a list, each element of which has a `[REFN, REFN_OPT, [PIPELINES]]` structure, where `REFN` is the refiner name, `REFN_OPT` are the command line refiner options, and `PIPELINES` is a list of pipelines that the refiner will integrate over. For example, one may wish to evaluate DAS Tool integrated over 
+CONCOCT in `mash20` mode, when run on MEGAHIT assemblies with `--no-bubble` and `--min-count 5` parameters, and METABAT2 in `single` mode, when run on default metaSPAdes assemblies. This is encoded in the element `['DAS_Tool', 'default', [['MEGAHIT', '--no-bubble --min-count 5', 'CONCOCT', 'default', 'mash20'], ['metaSPAdes', 'default', 'METABAT2', 'default', 'single']]]`. We may also wish to evaluate DAS Tool with, say, CONCOCT and METABAT2 both run in `single` mode, on default MEGAHIT. Together the complete refiners list would look like `[['DAS_Tool', 'default', [['MEGAHIT', '--no-bubble --min-count 5', 'CONCOCT', 'default', 'mash20'], ['metaSPAdes', 'default', 'METABAT2', 'default', 'single']]], ['DAS_Tool', 'default', [['MEGAHIT', 'default', 'CONCOCT', 'default', 'single'], ['MEGAHIT', 'default', 'METABAT2','default', 'single']]]]`. A bit cumbersome..., but, hopefully straightforward. 
 
 - `qctools`:
 `qctools` is a list of quality control tools that MAG-E will run on each bin. `qctools` takes a list.
