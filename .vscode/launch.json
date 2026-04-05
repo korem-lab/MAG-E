@@ -111,5 +111,16 @@
             "console": "integratedTerminal",
             "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
+        {
+            "name": "run-quality-control",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["run-quality-control", "--threads", "32"],
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
+        },
     ]
 }

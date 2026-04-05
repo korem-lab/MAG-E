@@ -31,9 +31,13 @@ def make_manifest(
     assemblers, binners, modes, refiners, qctools, simulation_dir, 
     assembly_cache, bintask_dir, project_base
 ):
-    # make sure they're unique
-    unq = lambda x: list(set(x))
-    assemblers, binners, modes, refiners = unq(assemblers), unq(binners), unq(modes), unq(refiners)
+    # Assert their unique
+    def chck(x):
+        assert len(x) == len(set(x)), Exception("List myst be unique")
+    chck(assemblers)
+    chck(binners)
+    chck(modes)
+    chck(refiners)
 
     # There may be multiple assembler, binner, and refiners run with different options
     # to give these a simple name, which can later be looked up, we construct tables
@@ -131,36 +135,36 @@ def run_bin_tasks(manifest, run_only=None, force_prep=False, force_bin=False, th
     if run_only is None or run_only == 'prep':
         for i in range(len(bin_tasks)):
             t = bin_tasks.iloc[i,:]
-            if force_prep or True: #not task_done(t, 'prep', clear=True):
+            if force_prep or not task_done(t, 'prep', clear=True):
                 run_prep(t, threads)
     # run bin
     if run_only is None or run_only == 'bin':
         for i in range(len(bin_tasks)):
             t = bin_tasks.iloc[i,:]
-            if force_bin or True: # not task_done(t, 'bin', clear=True):
+            if force_bin or not task_done(t, 'bin', clear=True):
                 run_bin(t, threads)
 
 def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
     refine_tasks = manifest[manifest.is_refiner] 
     bin_tasks = manifest[~manifest.is_refiner]
     if run_only is None or run_only == 'refine':
-        for i in len(range(refine_tasks)):
+        for i in range(len(refine_tasks)):
             t = refine_tasks.iloc[i, :]
             if force_refine or not task_done(t, 'bin', clear=True):
-                pipeline_paths = list()
-                for (ab, abo, bn, bno, ts) in t.pipelines:
+                ppln_bin_out = list()
+                ppln_asm_out = list()
+                for (ab, abo, bn, bno, mode) in t.pipelines:
                     # select bin task
                     bt = bin_tasks.loc[
                         (bin_tasks.assembler == ab) & (bin_tasks.assembler_options == abo) & 
                         (bin_tasks.binner == bn) & (bin_tasks.binner_options == bno) & 
-                        (bin_tasks.target_sample == ts)
+                        (bin_tasks.binning_mode == mode) & (bin_tasks.target_sample == t.target_sample)
                     ]
                     assert len(bt) == 1
                     # get the path
-                    pipeline_paths.append(bt.task_out_dir)
-                # we need only the paths of each binning task we want to refine 
-                t.pipelines = pipeline_paths
-                run_bin(t, threads, refine=True)
+                    ppln_bin_out.append(bt.task_out_dir.item())
+                    ppln_asm_out.append(bt.asm_dir.item())
+                run_bin(t, threads, refine=True, ppln_bin_out=ppln_bin_out, ppln_asm_out=ppln_asm_out)
 
 def run_prep(spec, threads):
     print('run_prep:', spec.task_name, flush=True)
@@ -168,32 +172,40 @@ def run_prep(spec, threads):
     b.run_prep(**(spec.to_dict() | {'threads':threads}))
     write_done_flag(spec.task_out_dir, name='prep')
 
-def run_bin(spec, threads, refine=False):
+def run_bin(spec, threads, refine=False, ppln_bin_out=None, ppln_asm_out=None):
     print('run_bin:', spec.task_name,flush=True)
-    b = getattr(bn, spec.binner + 'Binner' if not refine else 'Refiner')()
-    b.run_binning(**(spec.to_dict() | {'threads':threads}))
+    b = getattr(bn, (spec.binner + 'Binner') if not refine else (spec.refiner + 'Refiner'))()
+    spec.binner_options = '' if spec.binner_options == 'default' else spec.binner_options
+    spec.refiner_options = '' if spec.refiner_options == 'default' else spec.refiner_options
+    if refine:
+        assert ppln_bin_out 
+        assert ppln_asm_out
+        aux = {'ppln_bin_out':ppln_bin_out, 'ppln_asm_out':ppln_asm_out, 'threads':threads}
+    else:
+        aux = {'threads':threads}
+    b.run_binning(**(spec.to_dict() | aux))
     write_done_flag(spec.task_out_dir, name='bin')
 
 def clear_prep(task_out_dir):
     rm_dir(join(task_out_dir, 'input'))
     rm_dir(join(task_out_dir, 'prep_DONE'))
 
-def clear_bin(task_out_dir, binner):
-    rm_dir(join(task_out_dir, 'output', f'{binner}_bins'))
+def clear_bin(task_out_dir):
+    rm_dir(join(task_out_dir, 'output/bins'))
     rm_dir(join(task_out_dir, 'bin_DONE'))
 
 def run_quality_control(manifest, force=False, threads=8):
     for i in range(len(manifest)):
         t = manifest.loc[i,:]
-        if force or not task_done(t, stage='qc', clear=True):
-            tables = list()
-            for q in t.qc_tools:
-                q = getattr(qc, q+'QCTool')
-                q.run(**(t.to_dict() + {'threads':threads}))
-                tables.append(q.to_qctable(**(t.to_dict() | {'threads':threads})))
-            qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
-            qc_table['task_name'] = t.task_name
-            qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
+        tables = list()
+        for q in t.qctools:
+            q = getattr(qc, q+'QCTool')()
+            if not q.done(t.task_out_dir):
+                q.run(**(t.to_dict() | {'threads':threads}))
+            tables.append(q.to_qctable(**(t.to_dict() | {'threads':threads})))
+        qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
+        qc_table['task_name'] = t.task_name
+        qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
 
 def construct_binning_tables(manifest):
     for i in range(len(manifest)):
@@ -302,58 +314,58 @@ def compute_fp(df):
 def task_done(bntsk, stage='all', report=False, only_not_done=False, clear=False):
     # TODO ADD QC STAGE, and BIN TABLE STAGE
     if stage == 'all' or stage == 'prep':
-        spec = json.loads(bntsk.prep_spec)
-        task_out_dir = spec['task_out_dir']
-        prep_done = all(getattr(bn, b+'Binner').prep_done(**spec) for b in spec['binners'])
+        task_out_dir = bntsk.task_out_dir
+        b = getattr(bn, bntsk.binner+'Binner')()
+        prep_done =  b.prep_done(**bntsk.to_dict())
         prep_done &= exists(join(task_out_dir, 'prep_DONE'))
-        if report:
-            if only_not_done and not prep_done:
-                print('prep_NOT_DONE', bntsk.task_name, bntsk.description)
-            elif not only_not_done:
-                print('prep_NOT_DONE' if not prep_done else 'prep_DONE', bntsk.task_name, bntsk.description)
+        if not prep_done and report:
+            print('bin prep not DONE', bntsk.task_name, flush=True)
         if not prep_done and clear:
-            clear_prep(spec['task_out_dir'])
-            for b in spec['binners']:
-                b = getattr(bn, b+'Binner')
-                clear_bin(spec['task_out_dir'], b.name)
-            clear_post(spec['task_out_dir'])
+            clear_prep(task_out_dir)
+            clear_bin(task_out_dir)
         if stage == 'prep':
             return prep_done
 
     if stage == 'all' or stage == 'bin':
-        spec = json.loads(bntsk.bin_spec)
-        task_out_dir = spec['task_out_dir']
-        bin_done = all(getattr(bn, b+'Binner').bin_done(**spec) for b in spec['binners'])
+        task_out_dir = bntsk.task_out_dir
+        b = getattr(bn, (bntsk.binner + 'Binner') if not bntsk.is_refiner else (bntsk.refiner+'Refiner'))()
+        bin_done =  b.bin_done(**bntsk.to_dict())
         bin_done &= exists(join(task_out_dir, 'bin_DONE'))
-        if report:
-            if only_not_done and not bin_done:
-                print('bin_NOT_DONE', bntsk.task_name, bntsk.description)
-            elif not only_not_done:
-                print('bin_NOT_DONE' if not bin_done else 'bin_DONE', bntsk.task_name, bntsk.description)
+        if not bin_done and report:
+            print('bin not DONE', bntsk.task_name, flush=True)
         if not bin_done and clear:
-            for b in spec['binners']:
-                b = getattr(bn, b+'Binner')
-                clear_bin(spec['task_out_dir'], b.name)
-            clear_post(spec['task_out_dir'])
+            clear_bin(task_out_dir)
         if stage == 'bin':
             return bin_done
 
-    if stage == 'all' or stage == 'post':
-        spec = json.loads(bntsk.post_spec)
-        task_out_dir = spec['task_out_dir']
-        post_done = all(getattr(bn, b+'Binner').post_done(**spec) for b in spec['binners'])
-        post_done &= exists(join(task_out_dir, 'post_DONE'))
-        if report:
-            if only_not_done and not post_done:
-                print('post_NOT_DONE', bntsk.task_name, bntsk.description)
-            elif not only_not_done:
-                print('post_NOT_DONE' if not post_done else 'post_DONE', bntsk.task_name)
-        if not post_done and clear:
-            clear_post(spec['task_out_dir'])
-        if stage == 'post':
-            return post_done
+    if stage == 'all' or stage == 'qc':
+        task_out_dir = bntsk.task_out_dir
+        b = getattr(qc, (bntsk.binner + 'Binner') if not bntsk.is_refiner else (bntsk.refiner+'Refiner'))()
+        bin_done =  b.bin_done(**bntsk.to_dict())
+        bin_done &= exists(join(task_out_dir, 'bin_DONE'))
+        if not bin_done and report:
+            print('bin not DONE', bntsk.task_name, flush=True)
+        if not bin_done and clear:
+            clear_bin(task_out_dir)
+        if stage == 'bin':
+            return bin_done
 
-    return prep_done and bin_done and post_done
+    #if stage == 'all' or stage == 'post':
+    #    spec = json.loads(bntsk.post_spec)
+    #    task_out_dir = spec['task_out_dir']
+    #    post_done = all(getattr(bn, b+'Binner').post_done(**spec) for b in spec['binners'])
+    #    post_done &= exists(join(task_out_dir, 'post_DONE'))
+    #    if report:
+    #        if only_not_done and not post_done:
+    #            print('post_NOT_DONE', bntsk.task_name, bntsk.description)
+    #        elif not only_not_done:
+    #            print('post_NOT_DONE' if not post_done else 'post_DONE', bntsk.task_name)
+    #    if not post_done and clear:
+    #        clear_post(spec['task_out_dir'])
+    #    if stage == 'post':
+    #        return post_done
+
+    return prep_done and bin_done
 
 def bowtie2(idx, bam, r1, r2, threads=8):
     run(f'bowtie2 -p {threads} -x {idx} -1 {r1} -2 {r2} | samtools view -bS - > {bam}', shell=True)

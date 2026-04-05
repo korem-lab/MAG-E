@@ -210,7 +210,7 @@ def run_binning(
 
 @app.command()
 def run_quality_control(
-    threads: int = typer.Argument(..., help='Number of threads to run each binning task.'),
+    threads: int = typer.Option(8,help='Number of threads to run each binning task.'),
 ):
     """
     Runs quality control tools.

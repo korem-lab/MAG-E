@@ -215,14 +215,26 @@ If a user decides not to use the API (i.e `use_api` is `no`; which is set with `
 the user is expected to populate the assembly_cache and bintask_dir themselves. There are two main benefits of not using the API. First,
 it allows you to use any whichever compute infrastructure and workflows (e.g your own highly-parallel scripts on a slurm infrastructure) make the most sense for a large-scale assembly and binning. Second, since binning algorithm development is an active research area, it allows complete flexibility in how you decide construct bins for MAG-E evaluation. You can bin any way you want, testing any new idea you wish, so long as you: 1) come up with a name for the binning approach (e.g "`MyNewBinner`" and specifiy it in the `config.yaml` as discussed above; and, 2) you put the bins for "`MyNewBinner`" in fasta format into the `output/bins` directories that the MAG-E `manifest.csv` has issued for the "`MyNewBinner`" tasks. 
 
-
-It also writes all directories where the outputs of each MAG-generation task will need to be placed in order for MAG-E to run evaluations. 
-MAG-E can bin samples using the assemblers, binners, and refiners that are internally supported by its
-API. For flexibility, it can also evaluate bins constructed by means not supported by the API. See "Constructing bins for evaluation" section for the considerations over whether to use the API. 
-If the API is used (`use_api` is `yes`), the verification checks whether the assemblers, binners, and refiners specified in `config.yaml` are supported. To get the list of currently supported tools, run `python -m maggie list-supported`. If `use_api` is `no`, this check is not run. In either case, MAG-E will check whether the quality control tools specified in `config.yaml` are supported. 
-
-
-
+The MAG-E command `get-task-dir` returns the correct directory to put the assembly and binning output of a particular MAG-construction pipeline. It's extremely useful when not using the API. It requires a request (either `assembly` or `bin`) and a sample name (see `--help` for details). For example,
+```
+pth=$(python -m maggie get-task-dir assembly ERR1136644 --assembler MEGAHIT --binner CONCOCT --binning-mode all)
+echo $pth
+/insomnia001/depts/pmg/users/ic2465/launch/myproject/assembly_cache/assembly_task_1/ERR1136644
+```
+Requests the assembly task directory for the MEGAHIT assembly run with default options (`--assembler-option` not given) on sample `ERR1136644`. We returned this to the bash variable `pth` and then `echo`ed it to standard out. When requesting `assembly` the additional options are irrelevant.
+The exact same command, but requesting `bin` returns the bin task directory for the MEGAHIT assembly run with default options on sample `ERR1136644` followed by CONCOCT run default in binning mode `all`:
+```
+pth=$(python -m maggie get-task-dir bin ERR1136644 --assembler MEGAHIT --binner CONCOCT --binning-mode all)
+echo $pth
+/insomnia001/depts/pmg/users/ic2465/launch/myproject/bintask_dir/bin_task_4/ERR1136644
+```
+This works for refiners also, with comma separating the fields within pipelines, and semi-colon separating pipelines: 
+```
+pth=$(python -m maggie get-task-dir bin ERR1136644 --refiner DAS_Tool --pipelines MEGAHIT,default,CONCOCT,default,all:MEGAHIT,default,METABAT2,default,single)
+echo $pth
+/insomnia001/depts/pmg/users/ic2465/launch/myproject/bintask_dir/bin_task_9/ERR1136644
+```
+`get-task-dir` makes it easy to populate the correct assembly and bin task directories when using your own scalable workflows for assembly and binning. 
 
 ### Project caching
 

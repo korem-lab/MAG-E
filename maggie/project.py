@@ -223,7 +223,7 @@ class Project:
     
     def run_quality_control(self, threads=8):
         manifest = parse_manifest(self.config.manifest)
-        tu.run_quality_control(manifest, threads)
+        tu.run_quality_control(manifest, threads=threads, force=True)
 
     def calc_per_genome_metrics(self):
         # Construct the binning table for each binning tasks

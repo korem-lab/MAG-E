@@ -3,6 +3,7 @@ import pandas as pd
 from os import makedirs, rename
 from os.path import join, dirname
 from subprocess import run
+from ..utils import not_empty
 import glob
 
 class QCTool(ABC):
@@ -20,9 +21,9 @@ class QCTool(ABC):
 
 class CheckM2QCTool(QCTool):
     name = 'CheckM2'
-    exec = 'checkm2'
+    exec = '/insomnia001/depts/pmg/KoremLab/miniforge/envs/checkm2/bin/checkm2'
     qc_measures = [f'{name}_completeness', f'{name}_contamination']
-    database_path = 'uniref100.KO.1.dmnd'
+    database_path = '/insomnia001/depts/pmg/KoremLab/Databases/checkm2/uniref100.KO.1.dmnd'
 
     def run(self, task_out_dir, threads, **kwargs):
         bin_dir = join(task_out_dir, 'output/bins')
@@ -40,27 +41,33 @@ class CheckM2QCTool(QCTool):
         res= res.add_prefix(f'{self.name}_')
         res.rename({f'{self.name}_bin':'bin'},axis=1,inplace=True)
         return res
+
+    def done(self, task_out_dir, **kwargs):
+        results_dir = join(task_out_dir, f'output/{self.name}')
+        return not_empty(join(results_dir, 'quality_report.tsv'))
     
 class GUNCQCTool(QCTool):
     name = 'GUNC'
     exec = 'gunc'
-    database_path ='gunc_db_progenomes2.1.dmnd'
+    database_path ='/insomnia001/depts/pmg/users/ab4966/gunc/gunc_db/gunc_db_progenomes2.1.dmnd'
     qc_measures = [f'{name}_isPass']
 
     def run(self, task_out_dir, threads, **kwargs):
         bin_dir = join(task_out_dir, 'output/bins')
         task_out_dir = join(task_out_dir, f'output/{self.name}')
         makedirs(task_out_dir, exist_ok=True)
-        run(
-            f'{self.name} run -t {threads} --input_dir {bin_dir} --file_suffix fasta ' +
-            f'-r {self.database_path} --out_dir {task_out_dir} 2> {task_out_dir}/GUNCerr.log', shell=True
-        )
+        cmd = f'{self.exec} run -t {threads} --input_dir {bin_dir} --file_suffix fasta -r {self.database_path} --out_dir {task_out_dir} 2> {task_out_dir}/GUNCerr.log'
+        run(cmd, shell=True)
 
     def to_qctable(self, task_out_dir, **kwargs):
-        results_dir = join(task_out_dir, 'output/GUNC')
+        results_dir = join(task_out_dir, f'output/{self.name}')
         res = pd.read_csv(join(results_dir,'GUNC.progenomes_2.1.maxCSS_level.tsv'),sep='\t')
         res.rename({'genome':'bin','pass.GUNC':'isPass'},axis=1,inplace=True)
         res['bin'] = res['bin'].apply(lambda x: x[:-1] if x.endswith('.') else x)
         res = res.add_prefix(f'{self.name}_')
         res.rename({f'{self.name}_bin':'bin'},axis=1,inplace=True)
         return res
+
+    def done(self, task_out_dir, **kwargs):
+        results_dir = join(task_out_dir, f'output/{self.name}')
+        return not_empty(join(results_dir,'GUNC.progenomes_2.1.maxCSS_level.tsv'))

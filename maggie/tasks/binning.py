@@ -14,7 +14,7 @@ def jgi_summarize(bams, filename):
 
 def bin_done(bin_dir):
     bins = glob.glob(f'{bin_dir}/*.fasta')
-    return len(bins) > 0 and all(not_empty(e) for e in bins) 
+    return all(not_empty(e) for e in bins) if bins else True # It could be that a binner legitimately found no bins. Cant check beyond that.
 
 def softlink_assembly_to_taskdir(asm_dir, sample, task_out_dir, prefix=None):
     contigs = abspath(join(asm_dir, f'{sample}.fasta'))
@@ -34,7 +34,7 @@ class Binner(ABC):
         ...
 
     @abstractmethod
-    def run_binning(self, task_out_dir, options, **kwargs):
+    def run_binning(self, task_out_dir, binner_options, **kwargs):
         ...
 
     @abstractmethod
@@ -52,14 +52,14 @@ class Binner(ABC):
 class MaxBin2Binner(Binner):
     name='MaxBin2'
     exec='run_MaxBin.pl'
-    def run_binning(self, task_out_dir, binning_options, threads, **kwargs):
+    def run_binning(self, task_out_dir, binner_options, threads, **kwargs):
         makedirs(join(task_out_dir, f'output/bins'), exist_ok=True)
         contigs = join(task_out_dir, 'input', 'asm.fasta')
         assert(exists(contigs))
         counts = glob.glob(join(task_out_dir, 'input', '*.counts'))
         counts = ' '.join(f'-abund{i} {fl}' for i, fl in enumerate(counts,start=1))
         counts = counts.replace('-abund1', '-abund')
-        cmd = f'{self.name} -thread {threads} {binning_options} -contig {contigs} {counts} -out {task_out_dir}/output/bins/bin 2> {task_out_dir}/output/MaxBin2err.log'
+        cmd = f'{self.name} -thread {threads} {binner_options} -contig {contigs} {counts} -out {task_out_dir}/output/bins/bin 2> {task_out_dir}/output/MaxBin2err.log'
         run(cmd, shell=True)
         self.bins_as_fasta(f'{task_out_dir}/output/bins')
 
@@ -93,11 +93,11 @@ class METABAT2Binner(Binner):
     name='METABAT2'
     exec='metabat2'
 
-    def run_binning(self,task_out_dir, binning_options, threads, **kwargs):
+    def run_binning(self,task_out_dir, binner_options, threads, **kwargs):
         makedirs(join(task_out_dir, f'output/bins'), exist_ok=True)
         contigs = join(task_out_dir, 'input', 'asm.fasta')
         count_mat = join(task_out_dir, 'input', 'count_mat.tsv')
-        cmd = f'{self.exec} --numThreads {threads} {binning_options} --inFile {contigs}  --abdFile {count_mat} --outFile {task_out_dir}/output/{METABAT2Binner.name}_bins/bin'
+        cmd = f'{self.exec} --numThreads {threads} {binner_options} --inFile {contigs}  --abdFile {count_mat} --outFile {task_out_dir}/output/bins/bin'
         run(cmd, shell=True)
         self.bins_as_fasta(f'{task_out_dir}/output/bins')
 
@@ -128,11 +128,11 @@ class VAMBBinner(Binner):
     name='VAMB'
     exec='vamb'
 
-    def run_binning(self, task_out_dir, options, **kwargs):
+    def run_binning(self, task_out_dir, binner_options, threads, **kwargs):
         input = join(task_out_dir, 'input')
         bin_dir = join(task_out_dir, 'output/bins')
         makedirs(join(task_out_dir, 'output'),exist_ok=True)
-        cmd = f'{self.exec} bin default {options} --outdir {bin_dir} --fasta {input}/asm.fasta --bamdir {input} --minfasta 100000 -o "" 2> {task_out_dir}/VAMB.errlog',
+        cmd = f'{self.exec} bin default -p {threads} {binner_options} --outdir {bin_dir} --fasta {input}/asm.fasta --bamdir {input} --minfasta 100000 -o "" 2> {task_out_dir}/VAMB.errlog',
         run(cmd, shell=True)
         self.bins_as_fasta(bin_dir)
 
@@ -168,7 +168,7 @@ class SemiBin2Binner(Binner):
     name='SemiBin2'
     exec = 'SemiBin2'
 
-    def run_binning(self, task_out_dir, options, samples, **kwargs):
+    def run_binning(self, task_out_dir, binner_options, samples, threads, **kwargs):
         bin_dir = join(task_out_dir, 'output/bins')
         # single and multi-sample binning differ
         contigs = join(task_out_dir, 'input', 'asm.fasta')
@@ -176,18 +176,18 @@ class SemiBin2Binner(Binner):
         if len(samples) == 1:
             bam = join(task_out_dir, 'input', f'{target_sample}_{target_sample}.bam')
             run(
-                f'{self.exec} single_easy_bin {options} --environment human_gut -i {contigs} -b {bam} ' + 
+                f'{self.exec} single_easy_bin --threads {threads} {binner_options} --environment human_gut -i {contigs} -b {bam} ' + 
                 f'-o {bin_dir} --compression none 2> {task_out_dir}/SemiBin2.errlog',
                 shell=True
             )
         else:
             bams = ' '.join(f'{task_out_dir}/input/{target_sample}_{s}.bam' for s in samples)
             run(
-                f'{self.exec} single_easy_bin {options} -i {contigs} -b {bams} ' + 
+                f'{self.exec} single_easy_bin --threads {threads} {binner_options} -i {contigs} -b {bams} ' + 
                 f'-o {bin_dir} --compression none 2> {task_out_dir}/SemiBin2.errlog',
                 shell=True
             )
-        SemiBin2Binner.bins_as_fasta(bin_dir)
+        self.bins_as_fasta(bin_dir)
 
     def run_prep(self, asm_dir, samples, task_out_dir, **kwargs):
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
@@ -232,13 +232,13 @@ class CONCOCTBinner(Binner):
     name='CONCOCT'
     exec='/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/concoct/bin/'
 
-    def run_binning(self, task_out_dir, options, **kwargs):
+    def run_binning(self, task_out_dir, binner_options, threads, **kwargs):
         # run concoct main clustering
         input = join(task_out_dir, 'input')
         bin_dir = join(task_out_dir, 'output/bins')
         makedirs(bin_dir, exist_ok=True)
         run(
-            f'{self.exec}/concoct {options} --composition_file {input}/contig_10K.fa --coverage_file {input}/coverage_table.tsv -b {bin_dir} 2> {task_out_dir}/output/cncterr.log',
+            f'{self.exec}/concoct --threads {threads} {binner_options} --composition_file {input}/contig_10K.fa --coverage_file {input}/coverage_table.tsv -b {bin_dir} 2> {task_out_dir}/output/cncterr.log',
             shell=True
         )
         # merge subcontig clustering into orginal contig clustering
@@ -295,13 +295,13 @@ class COMEBinBinner:
     name='COMEBin'
     exec='comebin'
     size=1000
-    def run_binning(self, task_out_dir, options, **kwargs):
+    def run_binning(self, task_out_dir, binner_options, threads, **kwargs):
         output = join(task_out_dir, 'output')
         input = join(task_out_dir, 'input')
         makedirs(output, exist_ok=True)
 
         run(
-            f'mamba run -n {self.exec} run_comebin.sh {options} -a {input}/asm_{self.size}.fa ' + 
+            f'mamba run -n {self.exec} run_comebin.sh -t {threads} {binner_options} -a {input}/asm_{self.size}.fa ' + 
             f'-p {input} -o {output}/bins 2> {output}/COMEBin.errlog', shell=True
         )
         self.bins_as_fasta(f'{output}/bins')
@@ -346,5 +346,66 @@ class COMEBinBinner:
         bin_dir = join(task_out_dir, 'output/bins')
         return bin_done(bin_dir)
 
-class DAS_ToolRefiner:
-    pass
+class Refiner(ABC):
+    name: str
+    exec: str
+
+    @abstractmethod
+    def run_binning(self, task_out_dir, binner_options, **kwargs):
+        ...
+
+    @abstractmethod
+    def bin_done(self, task_out_dir, **kwargs) -> bool:
+        ...
+
+    @abstractmethod
+    def bins_as_fasta(self, bin_dir) -> list:
+        ...
+
+class DAS_ToolRefiner(Refiner):
+    name = 'DAS_Tool'
+    exec = 'DAS_Tool'
+    def run_binning(self, task_out_dir, refiner_options, pipelines, ppln_bin_out, ppln_asm_out, target_sample, threads=8, **kwargs):
+        summaries = list()
+        bin_dir = join(task_out_dir, f'output/bins')
+        makedirs(bin_dir, exist_ok=True)
+        input_dir = join(task_out_dir, 'input') 
+        makedirs(input_dir, exist_ok=True)
+
+        assert len(set(ppln_asm_out)) == 1, Exception("DAS_Tool requires the all binning solutions to operate on the same assembly.")
+        for i, bin_out in enumerate(ppln_bin_out):
+            bins = glob.glob(join(bin_out, 'output/bins/*.fasta'))
+            das_summary = join(input_dir, f'ppln_{i}_das_summary.tsv')
+            hdrs=list()
+            for bin in bins:
+                with open(bin) as fin:
+                    bin_name = splitext(basename(bin))[0]
+                    hdrs += [(e.strip()[1:], bin_name) for e in fin if e.startswith('>')]
+            pd.DataFrame(hdrs).to_csv(das_summary, header=None, index=None, sep='\t')
+            summaries.append(das_summary)
+        contigs = softlink_assembly_to_taskdir(ppln_asm_out[0], target_sample, task_out_dir)
+        contig2bin = ','.join(summaries)
+        run(
+            f'DAS_Tool -t {threads} {refiner_options} -i {contig2bin} -c {contigs} -o {bin_dir} --write_bin_evals --write_bins --write_unbinned',
+            shell=True
+        )
+        self.bins_as_fasta(bin_dir)
+            
+    def bins_as_fasta(self, bin_dir):
+        bins = glob.glob(bin_dir+ '_DASTool_bins/*.fa')
+        bins = [e for e in bins if 'unbinned.fa' not in e]
+        records = list()
+        if len(bins) != 0:
+            for i, b in enumerate(bins):
+                base = basename(b)
+                bnew = join(bin_dir, f'bin.{i}.fasta')
+                records.append((base, f'bin.{i}.fasta'))
+                rename(b, bnew)
+            pd.DataFrame(records, columns=['das_name', 'new_name']).to_csv(join(bin_dir, f'bin_renaming_mapping.csv'),index=None)
+        bins = glob.glob(join(bin_dir, 'bin*.fasta'))
+        return bins
+
+    @staticmethod
+    def bin_done(task_out_dir, **kwargs):
+        bin_dir = join(task_out_dir, 'output/bins')
+        return bin_done(bin_dir)
