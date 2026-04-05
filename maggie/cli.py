@@ -168,6 +168,17 @@ def run_assembly(
     project.run_assembly(threads)
 
 @app.command()
+def run_mapping(
+    threads: int = typer.Option(8, help='Threads to assemblers')
+):
+    """
+    Runs assembly tasks.
+    """
+    _, directory = get_current_project()
+    project = Project.load(directory)
+    project.run_mapping(threads)
+
+@app.command()
 def construct_ground_truth(
     min_contig_len: int = typer.Option(100, help='Minimum length of contigs that can contribute to ground truth metrics.'), 
     min_pident: float = typer.Option(99, help='Minimum percent identity for a ground truth match'),
@@ -183,7 +194,7 @@ def construct_ground_truth(
 
 @app.command()
 def run_binning(
-    threads: int = typer.Argument(..., help='Number of threads to run each binning task.'),
+    threads: int = typer.Option(8, help='Number of threads to run each binning task.'),
     run_only: str = typer.Option(None, help='Run prep or binning only.'),
     force_bin_prep: bool = typer.Option(False, help='Will force rerun the prep.'),
     force_bin: bool = typer.Option(False, help='Will force rerun the binning.'),

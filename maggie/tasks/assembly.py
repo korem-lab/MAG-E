@@ -31,15 +31,13 @@ class Assembler(ABC):
         only the contig name with no whitespace."""
         ...
 
-    def get_task_dir(self, asm_dir):
-        return dirname(normpath(asm_dir))
-
     def assembly_done(self, ts, asm_dir):
-        return exists(join(self.get_task_dir(asm_dir), f'{ts}.fasta'))
+        return exists(join(asm_dir, f'{ts}.fasta'))
     
     def reduce_fasta_header_to_contig_name(self, file, gz=False):
         fs = open(file) if not gz else gzip.open(file)
-        data = parse_fasta(fs, gz)
+        data = list(parse_fasta(fs, gz))
+        fs.close()
         with open(file,'w') as f:
             for e in data:
                 e.hdr = self.reduce_header(e.hdr)
@@ -51,17 +49,17 @@ class MEGAHITAssembler(Assembler):
     exec = 'megahit'
 
     def run_assembly(self, r1, r2, asm_dir, threads, options=''):
-        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -f -o {asm_dir}'
+        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -f -o {asm_dir}/asm'
         run(cmd, shell=True)
     
     def reduce_header(self, header):
         return header.split()[0]
 
     def clean_up(self, ts, asm_dir):
-        old_fa_name = join(asm_dir, 'final.contigs.fa')
-        new_fa_name= join(self.get_task_dir(asm_dir), f'{ts}.fasta')
+        old_fa_name = join(f'{asm_dir}/asm', 'final.contigs.fa')
+        new_fa_name= join(asm_dir, f'{ts}.fasta')
         rename(old_fa_name, new_fa_name)
-        rm_dir(asm_dir)
+        rm_dir(f'{asm_dir}/asm')
         self.reduce_fasta_header_to_contig_name(new_fa_name)
 
         
@@ -70,7 +68,7 @@ class metaSPAdesAssembler(Assembler):
     exec = 'metaspades.py'
 
     def run_assembly(self, r1, r2, asm_dir, threads, options=''):
-        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -o {asm_dir}'
+        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -o {asm_dir}/asm'
         run(cmd, shell=True)
 
     def reduce_header(self, header):
@@ -81,8 +79,8 @@ class metaSPAdesAssembler(Assembler):
         Removes unneeded files, leaving only the assembly fasta.
         And renames the contigs. 
         """
-        old_fa_name = join(asm_dir, 'contigs.fasta')
-        new_fa_name= join(self.get_task_dir(asm_dir), f'{ts}.fasta')
-        #rename(old_fa_name, new_fa_name)
-        #rm_dir(asm_dir)
+        old_fa_name = join(f'{asm_dir}/asm', 'contigs.fasta')
+        new_fa_name= join(asm_dir, f'{ts}.fasta')
+        rename(old_fa_name, new_fa_name)
+        rm_dir(f'{asm_dir}/asm')
         self.reduce_fasta_header_to_contig_name(new_fa_name)

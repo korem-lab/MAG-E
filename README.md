@@ -6,7 +6,7 @@ This readme provides an explaination of how to run MAG-E on real metagenomic dat
 - Construct realistic simulations of the dataset
 - Evaluate MAG-generation pipelines on the simulated dataset dataset
 ## Installation
-We gotta pip install InSilicoSeq
+We gotta pip install InSilicoSeq. We need pandas==2.3.3 to work with dRep. 
 ## Setting up new projects
 
 MAG-E operates over project directories, which have a specific structure and contents.
@@ -70,7 +70,7 @@ SampleA,10000
 - `cluster_assignments`:
 The name of the csv, specifying the species-level cluster assignments of each genome in `genomes_dir`. 
 This csv must be moved into the project directory.
-It has four required fields: `genome`, `SpeciesRepr`, and `GenomeType` and `N50`. `genome` is the name 
+It has four required fields: `genome`, `SpeciesRepr`, and `GenomeType` and `N50`, `Length`. `genome` is the name 
 of a genome which must exist at `genomes_dir/<genome>.fasta.gz`. `SpeciesRepr`
 specifies the species-level cluster assignments. Genomes with the `SpeciesRepr` value are in the same cluster, the `SpeciesRepr` value (which must be a genome `genomes`) acts as the cluster representative, `N50` is the N50 of each genome fasta.
 `GenomeType` specifies whether the genome is a metagenome-assembled genome, or sequenced as an isolate. 
@@ -139,7 +139,8 @@ MAG-E supports evaluation of bins without using the API to allow for flexibilty 
 See "Constructing bins for evaluation" for considering whether or not to use API to construct bins.
 
 Note how we no longer need to specify the project name or directory? MAG-E caches projects and re-loads the project config to streamline the command line. See "Project caching" below for details. 
-
+## Required format for genome fasta
+Discuss here how they need to be in a format like MGYG, so a constant genome name, an underscore, and then contig name MGYG000000512_1. Fileames should be genometoken.fasta.gz
 ## Simulating datasets
 
 To simulate datasets, we firstwe make a MAG-E database of the input genomes. This involves clustering the genomes at the strain level, and constructing a Sylph sketch over them. See `--help` for options.
@@ -198,8 +199,21 @@ In order for MAG-E to evaluate pipelines, the output of assembly and bin tasks m
 
 ### Constructing assemblies and bins
 
-This is where the MAG-E API comes in. By default, `use_api` is `yes` in the `config.yaml`. It can be set to `no` when initializing
-a project. If `yes` MAG-E MAG-E
+This is where the MAG-E API comes in. By default, `use_api` is `yes` (in `config.yaml`), in which case MAG-E will use the assemblers, binners, and refiners that are internally supported in its API to perform the assembly and bin tasks. MAG-E will automatically write the assembly and binning outputs to the correct locations specified in `manifest.csv`. Using the API is the most "hands-off" way to construct assemblies and bins for evaluation. First we construct assemblies with:
+```
+python -m maggie run-assembly
+```
+which populates the `assembly_cache`, and then we run the binning and refiner tasks with:
+```
+python -m maggie run_binning
+```
+After binning completes, MAG-E has written the bins for each task to the `output/bins` directory. Each bin is a separate fasta file, called `bin.<n>.fasta`.
+The assemblers, binners, and refiners that MAG-E supports can be found in the `./maggie/tasks` directory of the MAG-E repository. 
+Advanced users can extend the API, adding new binners, assemblers, or refiners by writing their own python classes which implement the interfaces. 
+
+If a user decides not to use the API (i.e `use_api` is `no`; which is set with `--use_api no` when running `initialize-project`) then
+the user is expected to populate the assembly_cache and bintask_dir themselves. There are two main benefits of not using the API. First,
+it allows you to use any whichever compute infrastructure and workflows (e.g your own highly-parallel scripts on a slurm infrastructure) make the most sense for a large-scale assembly and binning. Second, since binning algorithm development is an active research area, it allows complete flexibility in how you decide construct bins for MAG-E evaluation. You can bin any way you want, testing any new idea you wish, so long as you: 1) come up with a name for the binning approach (e.g "`MyNewBinner`" and specifiy it in the `config.yaml` as discussed above; and, 2) you put the bins for "`MyNewBinner`" in fasta format into the `output/bins` directories that the MAG-E `manifest.csv` has issued for the "`MyNewBinner`" tasks. 
 
 
 It also writes all directories where the outputs of each MAG-generation task will need to be placed in order for MAG-E to run evaluations. 

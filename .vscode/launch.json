@@ -7,10 +7,10 @@
             "request": "launch",
             "module": "maggie",
             "args": ["verify-project"],
-            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
             "justMyCode": true,
             "console": "integratedTerminal",
-            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
         {
             "name": "make-maggie-db",
@@ -18,10 +18,10 @@
             "request": "launch",
             "module": "maggie",
             "args": ["make-maggie-db"],
-            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
             "justMyCode": true,
             "console": "integratedTerminal",
-            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
         {
             "name": "make-mirrors",
@@ -29,10 +29,10 @@
             "request": "launch",
             "module": "maggie",
             "args": ["make-mirrors"],
-            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
             "justMyCode": true,
             "console": "integratedTerminal",
-            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
         {
             "name": "simulate-mgx",
@@ -40,10 +40,10 @@
             "request": "launch",
             "module": "maggie",
             "args": ["simulate-mgx"],
-            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
             "justMyCode": true,
             "console": "integratedTerminal",
-            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
         {
             "name": "construct-tasks",
@@ -51,10 +51,10 @@
             "request": "launch",
             "module": "maggie",
             "args": ["construct-tasks"],
-            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
             "justMyCode": true,
             "console": "integratedTerminal",
-            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
         {
             "name": "get-task-dir",
@@ -62,21 +62,54 @@
             "request": "launch",
             "module": "maggie",
             "args": ["get-task-dir", "bin", "ERR1136621", "--assembler", "MEGAHIT", "--binner", "METABAT2", "--binning-mode", "all"],
-            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
             "justMyCode": true,
             "console": "integratedTerminal",
-            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
         {
             "name": "run-assembly",
             "type": "python",
             "request": "launch",
             "module": "maggie",
-            "args": ["run-assembly"],
-            "cwd": "/Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/MAG-E",
+            "args": ["run-assembly", "--threads", "32"],
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
             "justMyCode": true,
             "console": "integratedTerminal",
-            "python": "/Users/izaak/miniforge3/envs/maggie/bin/python"
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "construct-ground-truth",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["construct-ground-truth"],
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "run-mapping",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["run-mapping"],
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
+        },
+        {
+            "name": "run-binning",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["run-binning", "--threads", "8"],
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
     ]
 }

@@ -195,6 +195,14 @@ class Project:
         manifest = parse_manifest(self.config.manifest)
         tu.run_assemblies(manifest, threads)
 
+    def run_mapping(self, threads):
+        """
+        Runs each assembly task in the manifest. 
+        """
+
+        manifest = parse_manifest(self.config.manifest)
+        tu.run_mapping(manifest, threads)
+
     def construct_ground_truth(self, min_contig_len=100, min_pident=99, min_prop=99, max_prop=101):
         """
         Constructs the ground truth for each assembly. 

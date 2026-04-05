@@ -1,6 +1,7 @@
 from os.path import join, exists, basename
 import pandas as pd
 import hashlib
+from subprocess import run, DEVNULL
 from functools import reduce
 from itertools import product
 import json
@@ -101,25 +102,42 @@ def run_assemblies(manifest, threads=8):
         r1 = join(t.simulation_dir, f'{t.target_sample}_R1.fastq.gz')
         r2 = join(t.simulation_dir, f'{t.target_sample}_R2.fastq.gz')
         options = '' if t.assembler_options == 'default' else t.assembler_options
-        if t.assembler == 'metaSPAdes': continue
         assembler = getattr(ab, f'{t.assembler}Assembler')()
         assembler.run_assembly(r1, r2, t.asm_dir, threads, options)
         assembler.clean_up(t.target_sample, t.asm_dir)
-        assert assembler.assembly_done()
+        assert assembler.assembly_done(t.target_sample, t.asm_dir)
+
+def run_mapping(manifest, threads=8):
+    # multiple bintasks can use the sample assembly so first,
+    # gather all the unique assembly tasks from the manifest
+    manifest = manifest[~manifest.is_refiner]
+    asm_tasks = manifest[['target_sample', 'simulation_dir', 'asm_dir', 'assembler', 'assembler_options']].drop_duplicates()
+    for i in range(len(asm_tasks)):
+        t = asm_tasks.iloc[i,:]
+        samples = set([s for ss in manifest[manifest.target_sample == t.target_sample]['samples'] for s in ss])
+        for s in samples:
+            r1 = join(t.simulation_dir, f'{s}_R1.fastq.gz')
+            r2 = join(t.simulation_dir, f'{s}_R2.fastq.gz')
+            contigs = join(t.asm_dir, f'{t.target_sample}.fasta')
+            bowtie2_build(contigs, contigs.replace('.fasta', ''))
+            bam = contigs.replace('.fasta', f'_{s}.bam')
+            bowtie2(contigs.replace('.fasta',''),bam, r1, r2, threads)
+            sort_bam(bam,threads=threads)
+            index_bam(bam)
 
 def run_bin_tasks(manifest, run_only=None, force_prep=False, force_bin=False, threads=8):
     # run prep
     bin_tasks = manifest[~manifest.is_refiner]
     if run_only is None or run_only == 'prep':
         for i in range(len(bin_tasks)):
-            t = bin_tasks.loc[i,:]
-            if force_prep or not task_done(t, 'prep', clear=True):
+            t = bin_tasks.iloc[i,:]
+            if force_prep or True: #not task_done(t, 'prep', clear=True):
                 run_prep(t, threads)
     # run bin
     if run_only is None or run_only == 'bin':
         for i in range(len(bin_tasks)):
-            t = bin_tasks.loc[i,:]
-            if force_bin or not task_done(t, 'bin', clear=True):
+            t = bin_tasks.iloc[i,:]
+            if force_bin or True: # not task_done(t, 'bin', clear=True):
                 run_bin(t, threads)
 
 def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
@@ -127,7 +145,7 @@ def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
     bin_tasks = manifest[~manifest.is_refiner]
     if run_only is None or run_only == 'refine':
         for i in len(range(refine_tasks)):
-            t = refine_tasks.loc[i, :]
+            t = refine_tasks.iloc[i, :]
             if force_refine or not task_done(t, 'bin', clear=True):
                 pipeline_paths = list()
                 for (ab, abo, bn, bno, ts) in t.pipelines:
@@ -146,14 +164,14 @@ def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
 
 def run_prep(spec, threads):
     print('run_prep:', spec.task_name, flush=True)
-    b = getattr(bn, spec.binner + 'Binner')
-    b.run_prep(**(spec.to_dict() + {'threads':threads}))
+    b = getattr(bn, spec.binner + 'Binner')()
+    b.run_prep(**(spec.to_dict() | {'threads':threads}))
     write_done_flag(spec.task_out_dir, name='prep')
 
 def run_bin(spec, threads, refine=False):
     print('run_bin:', spec.task_name,flush=True)
-    b = getattr(bn, spec.binner + 'Binner' if not refine else 'Refiner')
-    b.run_binning(**(spec.to_dict()+ {'threads':threads}))
+    b = getattr(bn, spec.binner + 'Binner' if not refine else 'Refiner')()
+    b.run_binning(**(spec.to_dict() | {'threads':threads}))
     write_done_flag(spec.task_out_dir, name='bin')
 
 def clear_prep(task_out_dir):
@@ -172,7 +190,7 @@ def run_quality_control(manifest, force=False, threads=8):
             for q in t.qc_tools:
                 q = getattr(qc, q+'QCTool')
                 q.run(**(t.to_dict() + {'threads':threads}))
-                tables.append(q.to_qctable(**(t.to_dict() + {'threads':threads})))
+                tables.append(q.to_qctable(**(t.to_dict() | {'threads':threads})))
             qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
             qc_table['task_name'] = t.task_name
             qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
@@ -336,3 +354,21 @@ def task_done(bntsk, stage='all', report=False, only_not_done=False, clear=False
             return post_done
 
     return prep_done and bin_done and post_done
+
+def bowtie2(idx, bam, r1, r2, threads=8):
+    run(f'bowtie2 -p {threads} -x {idx} -1 {r1} -2 {r2} | samtools view -bS - > {bam}', shell=True)
+
+def bowtie2_build(ref, idx):
+    run(f'bowtie2-build --threads 4 {ref} {idx}', shell=True,stdout=DEVNULL,stderr=DEVNULL)
+
+def sort_bam(bam, coordinate=True, tmp_pref='tmp', threads=8):
+    sort_coordinate = '' if coordinate else ' -n '
+    run(f'samtools sort -@ {threads} {sort_coordinate} {bam} > {bam}.{tmp_pref}',shell=True)
+    run(f'mv {bam}.{tmp_pref} {bam}',shell=True)
+
+def index_bam(bam):
+    bai = bam.replace('.bam', '.bai')
+    run(f'samtools index {bam} {bai}',shell=True)
+
+def compute_idxstats(bam, idxstats):
+    run(f'samtools idxstats {bam} > {idxstats}',shell=True)

@@ -11,7 +11,8 @@ def make_blastdb(ref_genomes, blast_db, title):
     run(f'zcat {ref_genomes} | makeblastdb -dbtype nucl -in - -out {blast_db} -title {title}',shell=True)
 
 def blastn(blast_db, contigs, out_file, threads=8):
-    run(f'blastn -db {blast_db} -outfmt "6 qacc sacc evalue qstart qend qlen sstart send slen pident nident length" -query {contigs} -out {out_file} -num_threads {threads}', shell=True)
+    cmd = f'blastn -db {blast_db} -outfmt "6 qacc sacc evalue qstart qend qlen sstart send slen pident nident length" -query {contigs} -out {out_file} -num_threads {threads}'
+    run(cmd, shell=True)
 
 def get_blast_file(sample,contigs,genomes, outdir, force=False):
     genomes_str = ' '.join(genomes)
@@ -44,13 +45,13 @@ def load_blast_results(file):
             'contig_length', 'ref_start', 'ref_end', 'ref_length',
             'pident', 'nident', 'aln_length'
         ]
-    hits['genome'] = hits.ref.apply(lambda x: re.findall('(MGYG[0-9]+)',x)[0])
+    hits['genome'] = hits.ref.apply(lambda x: x.split('_')[0])
     hits['ref'] = hits.ref.apply(lambda x: x.replace('.fa',''))
     return hits
 
 def _construct_ground_truth(sample, straindb, hits):
     # Initialize ground truth matrix
-    isolate_genomes = set(straindb.genome[straindb.Genome_type == 'Isolate'])
+    isolate_genomes = set(straindb.genome[straindb.GenomeType == 'Isolate'])
     hits['sample'] = sample
     hits.drop(['evalue', 'contig_start', 'contig_end'],axis=1, inplace=True)
     hits['key']  = hits.contig.apply(lambda x : f'{sample}-{x}')
@@ -67,16 +68,13 @@ def construct_ground_truth(
     asm_tasks = set()
 
     # extract assembly tasks
-    asm_tasks = manifest[['target_sample', 'simulation_dir', 'asm_dir']]
-    # asm dir is where the sample was assembled (i.e, ends with the sample file)
-    # but this is now moved a directory up into the assembly_task_n directory.
-    asm_tasks.asm_dir = asm_tasks.asm_dir.apply(lambda x: os.path.basename(os.path.normpath(x)))
+    asm_tasks = manifest[~manifest.is_refiner][['target_sample', 'simulation_dir', 'asm_dir']]
     asm_tasks.drop_duplicates(inplace=True)
     
     for i in range(len(asm_tasks)):
-        t = asm_tasks.loc[i,:]
-        genomes = glob.glob(t.simulation_dir, f'iss_{t.target_sample}_genomes/*.fasta.gz')
-        contigs = join(t.asm_dir, f'{t.target_sample}.contigs.fasta')
+        t = asm_tasks.iloc[i,:]
+        genomes = glob.glob(join(t.simulation_dir, f'iss_{t.target_sample}_genomes/*.fasta.gz'))
+        contigs = join(t.asm_dir, f'{t.target_sample}.fasta')
         hits = get_blast_file(t.target_sample, contigs, genomes, t.asm_dir)
         hits = filter_blast_hits(hits, min_contig_len, min_pident, min_prop, max_prop)
         db_table = parse_maggie_db(maggie_db_table)
