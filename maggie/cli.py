@@ -230,10 +230,17 @@ def calc_per_genome_metrics(
     project.calc_per_genome_metrics()
 
 @app.command()
-def calc_contig_level_metrics():
+def calc_contig_level_metrics(
+    precision: float = typer.Option(0.9, help='Minimum MAG-E precision for the recoverable set.'),
+    recall: float = typer.Option(0.7, help='Minimum MAG-E recall for the recoverable set.')
+):
     """
     Calculate MAG-E recall, precision, F-score of contig groups. 
     """
+    _, directory = get_current_project()
+    project = Project.load(directory)
+    project.calc_contig_level_metrics(precision, recall)
+
 
 @app.command()
 def evaluate_pipelines(

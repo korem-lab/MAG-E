@@ -11,7 +11,8 @@ from subprocess import run
 
 
 def run_R_script(script, *args):
-    cmd = f'Rscript {script}.R {" ".join(args)}'
+    dir = Path(__file__).parent
+    cmd = f'Rscript {dir}/R/{script}.R {" ".join(args)}'
     print(cmd)
     run(cmd, shell=True)
 
@@ -41,6 +42,13 @@ def parse_read_counts(file):
     df = pd.read_csv(file)
     assert ['sample', 'count'] == df.columns.to_list()
     df.set_index('sample',inplace=True)
+    return df
+
+def parse_contig_properties(file):
+    df = pd.read_csv(file)
+    for e in ['contig', 'sample']:
+        assert e in df.columns
+    df['key'] = df.apply(lambda x: f'{df.sample}:{df.contig}', axis=1)
     return df
 
 def parse_binning_mode_datasets(file):

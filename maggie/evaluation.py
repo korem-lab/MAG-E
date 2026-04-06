@@ -5,7 +5,7 @@ from os.path import join, exists, basename
 from .utils import parse_read_counts, parse_quality_control_table
 
 
-def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, read_counts=None):
+def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, read_counts=None, contig_props=None):
     rprt = list()
     for e in manifest.task_out_dir:
         if exists(join(e, 'output/binning_table.csv')):
@@ -30,17 +30,11 @@ def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, rea
         rprt = pd.merge(rprt, qctbls, left_on=['task_name', 'representative_bin'], right_on=['task_name', 'bin'],how='left')
         assert rprt[rprt.TP & rprt.bin.isna()].empty
     if add_cp:
-        assert Exception # This needs fixing
-        asm = manifest.assembler.iloc[0] 
-        cptbls = pd.read_parquet(
-            join(utls.PNP_CP_CACHE_MH if asm == 'megahit' else utls.PNP_CP_CACHE_MS, 'rcvgnm_contig_properties.parquet')
-        )
+        cptbls = pd.read_parquet(contig_props)
         # make float16 - don't need much accuracy, most values in 0-1
         float_cols = cptbls.select_dtypes(include=['float']).columns
         cptbls[float_cols] = cptbls[float_cols].astype(np.float32)
-        # drop to relevant samples
-        cptbls = cptbls[cptbls['sample'].isin(manifest.target_sample)]
-        rprt = pd.merge(rprt,cptbls.drop(['sample','contig', 'contig_length', 'is_isolate', 'genome_length'],axis=1),on=['key','genome'])
+        rprt = pd.merge(rprt,cptbls.drop(['sample','contig', 'contig_length'],axis=1),on=['key','genome'])
 
     if add_abundance:
         assert exists(read_counts)
@@ -100,6 +94,7 @@ def add_report_data(rprt, gm, manifest):
     gm['assembler'] = gm.task_name.map(manifest.assembler)
     gm['sample'] = gm.task_name.map(manifest.target_sample)
     gm['assembler_options'] = gm.task_name.map(manifest.assembler_options)
+    gm['is_refiner'] = gm.task_name.map(manifest.is_refiner)
     gm['binner'] = gm.task_name.map(manifest.apply(
         lambda x: f'{x.binner}{x.binner_summary_name}' if not x.is_refiner else f'{x.refiner}{x.refiner_summary_name}', axis=1
     ))
@@ -187,8 +182,7 @@ def calculate_coverage(intervals):
             cur_e = max(cur_e, end)
     return total + (cur_e - cur_s)
 
-def recoverable_genome_set(score_files, min_rc, min_pr):
-    scores = parse_genome_measurement_files(score_files, min_cov=0)
+def recoverable_genome_set(scores, min_rc, min_pr):
     scores_rec = scores.groupby(['binning_mode', 'binner', 'assembler', 'sample', 'genome']).filter(
         lambda x: (x[x.metric == 'cov_rc'].value.iloc[0] >= min_rc) and (x[x.metric == 'cov_pr'].value.iloc[0] >= min_pr)
     )
@@ -208,12 +202,79 @@ def parse_genome_measurement_files(score_files, min_cov, metric=None, isolate_on
             scr = scr[scr.metric == metric] 
         score.append(scr)
     score = pd.concat(score)
-    print('pre filtering', score.shape[0])
     # filter for genomes above min coverage
     score['genome_coverage'] = (score['genome_n_reads'] * 250) / score.genome_length
     score = score[score.genome_coverage >= min_cov]
     if isolate_only:
         score = score[score.is_isolate]
-    print('post filtering', score.shape[0])
     score = score.reset_index(drop=True)
     return score
+
+def to_percentiles(data):
+    data = data.dropna()
+    name = data.columns[0] # prop name
+    data.sort_values(by=name, inplace=True)
+    data['clen_csum'] = data.contig_length.cumsum()
+    percentiles = (np.arange(start=1, stop=101) * data.contig_length.sum()/100).astype(int)
+    data[f'{name}_pctl'] = data.clen_csum.apply(lambda x: np.searchsorted(percentiles, x)).astype(int)
+
+    # downgrade the percentile if the majority (> 50% length) of a contig is present
+    # in the lower percentile
+    data[f'{name}_pctl'] = data.progress_apply(
+        lambda x: x[f'{name}_pctl']
+        if x[f'{name}_pctl'] == 0 else x[f'{name}_pctl'] - 1
+        if ((x.clen_csum - percentiles[int(x[f'{name}_pctl'])-1]) < x.contig_length/2.0)
+        else x[f'{name}_pctl'], axis=1
+    ).astype(int)
+
+    # compute the last element of each percentile .
+    # -1 because we want the last element of each percentile, not the first of each
+    invpctl = data.iloc[
+        np.searchsorted(data[f'{name}_pctl'].values, np.arange(100),side='right')-1
+    ][name].reset_index(drop=True)
+    # map each percentile (0-99) to its inverse 
+    data[f'{name}_invpctl'] = data[f'{name}_pctl'].map(invpctl)
+    return data[[f'{name}_pctl', f'{name}_invpctl']]
+
+
+def construct_contig_property_metrics(prq_file, rcvgnms, manifest):
+    # read report 
+    rprt = pd.read_parquet(prq_file)
+
+    # calculate continuous property metrics
+    rprt = pd.merge(rprt, rcvgnms, on=['sample', 'genome'])
+    all_metrics = list()
+    for p in [e for e in rprt.columns if 'invpctl' in e]:
+        assert not any(np.isinf(rprt[p].values))
+        metrics = compute_Fscore_metrics(rprt, ['task_name', p, p.replace('invpctl', 'pctl')], property=p, selected_metric='rc', coverage_based=False)
+        all_metrics.append(metrics)
+    all_metrics = pd.concat(all_metrics)
+
+    # calculate discrete property metrics
+    rprt = pd.merge(
+        manifest, bntsks[['binner','binning_mode','task_name']].drop_duplicates(), on='task_name'
+    )
+
+    all_discrete_metrics = list()
+    for p in [e for e in rprt.columns if 'prop_d' in e]:
+        levels = rprt[p].unique()
+        scores = list()
+        for level in levels:
+            score_level = compute_Fscore_metrics(
+                rprt[rprt.p == level], 
+                groupby=['task_name', 'binning_mode', 'binner', 'assembler', 'sample', 'genome'], 
+                selected_metric='rc', coverage_based=False
+            )
+            score_level['level'] = level
+            scores.append(score_level)
+        scores = pd.concat(scores)
+        scores['property'] = p
+        all_discrete_metrics.append(scores)
+    all_metrics = pd.concat([all_metrics, all_discrete_metrics])
+    all_metrics = all_metrics[
+        [
+            'task_name', 'value','metric','property','n_bases','invpctl','pctl', 'genome',
+            'binning_mode', 'binner', 'assembler', 'sample', 'level'
+        ]
+    ]
+    all_metrics.to_parquet(prq_file.replace('_CPREPORT.parquet', f'.cp_metrics.parquet'))

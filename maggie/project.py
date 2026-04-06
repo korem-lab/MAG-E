@@ -13,7 +13,7 @@ from . import simulation as sm
 from . import evaluation as ev
 from .tasks import assembly as ab, binning as bn, quality_control as qc, task_utils as tu
 from . import ground_truth as gt 
-from .utils import manifest_get, parse_manifest, run_R_script
+from .utils import parse_manifest, run_R_script, parse_contig_properties
 from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
 
 
@@ -255,23 +255,79 @@ class Project:
             # these got dropped when constructing the genome metrics, all were doing here is adding them back
             gm = ev.add_report_data(rprt, gm, manifest.copy())
             gm.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}.genome_metrics.parquet'))
-    
+
+    def calc_contig_level_metrics(self, precision, recall, drop_raw_property=True):
+        manifest = parse_manifest(self.config.manifest)
+        # Add ground truth genome origin to the contig properties
+        asm_tasks = manifest.loc[['assembler', 'target_sample', 'assembly_options', 'asm_dir']].drop_duplicates()
+        asm_tasks = asm_tasks[asm_tasks.assembly_options == 'default']
+        cp_df_dataset = list()
+        for i in range(len(asm_tasks)):
+            t = asm_tasks.iloc[i,:]
+            cp_df = parse_contig_properties(join(t.asm_dir, f'{t.target_sample}_contig_properties.csv'))
+            gt_df = pd.read_csv(join(t.asm_dir, f'{t.target_sample}_gt_table.csv'))
+            cp_df = pd.merge(cp_df, gt_df[['genome', 'key']], on='key')
+            cp_df_dataset.append(cp_df)
+        cp_df_dataset = pd.concat(cp_df_dataset)
+        cp_df_dataset.reset_index(drop=True, inplace=True)
+
+        # collect the genome metrics over the default tasks
+        dflt_bin_tasks = manifest[
+            (manifest.binner_options == 'default') & (manifest.assembly_options == 'default')
+        ]
+        gnm_metrics = ev.parse_genome_measurement_files(
+            join(self.config.evaluation_dir, f'*.genome_metrics.parquet')
+        )
+        gnm_metrics = gnm_metrics.loc[gnm_metrics.task_name.isin(dflt_bin_tasks.task_name)]
+
+        # get the recoverable set and filter to just those 
+        _, rcvgnms = ev.recoverable_genome_set(gnm_metrics, recall, precision)
+        cp_df_dataset = pd.merge(cp_df_dataset, rcvgnms, on=['sample', 'genome'])
+
+        # iterate over continuous propertis and make a percentile form
+        for prop in [e for e in cp_df_dataset.columns if e.startswith('prop_c')]:
+            cp_df_dataset = pd.merge(
+                cp_df_dataset, ev.to_percentiles(cp_df_dataset[[prop, 'contig_length']]),
+                left_index=True, right_index=True, how='left'
+            )
+            if drop_raw_property:
+                cp_df_dataset.drop(prop, axis=1, inplace=True)
+        cp_df_dataset.to_parquet(self.config.evaluation_dir, 'processed_contig_properties.parquet')
+
+        # break the eval up by binner and assembler combos
+        bnab = manifest[['binner', 'assembler', 'is_refiner']].dropna().drop_duplicates().values
+        rfab = manifest[['refiner', 'assembler', 'is_refiner']].dropna().drop_duplicates().values
+        combos = np.vstack([bnab, rfab])
+        for i in range(combos.shape[0]):
+            bn, ab, is_refiner = combos[i]
+            if is_refiner:
+                _mnfst = manifest.loc[(manifest.refiner == bn) & (manifest.assembler == ab)]
+            else:
+                _mnfst = manifest.loc[(manifest.binner == bn) & (manifest.assembler == ab)]
+            rprt = ev.construct_report(_mnfst, add_cp=True, add_abundance=False)
+            rprt.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}_CPREPORT.parquet'))
+            ev.construct_contig_property_metrics(
+                join(self.config.evaluation_dir, f'{ab}_{bn}_CPREPORT.parquet'), rcvgnms, manifest
+            )
+
     def evaluate_pipelines(self, precision, recall, plots=False):
         # Write the set of recoverable genome scores to a csv for analysis in R
-        os.makedirs(join(self.config.evaluation_dir, 'LMM'))
-        gmfiles = glob.glob(self.config.evaluation_dir, '*.genome_metrics.parquet')
-        scores, _ = ev.recoverable_genome_set(gmfiles, recall, precision)
-        scores = scores[['binning_mode', 'binner', 'assembler', 'genome', 'sample', 'metric', 'value']]
+        os.makedirs(join(self.config.evaluation_dir, 'LMM'), exist_ok=True)
+        gnm_metrics = ev.parse_genome_measurement_files(
+            glob.glob(join(self.config.evaluation_dir, '*.genome_metrics.parquet')), min_cov=0
+        )
+        scores, _ = ev.recoverable_genome_set(gnm_metrics, 0.2, 0.2)
+        scores = scores[['binning_mode', 'binner', 'assembler', 'genome', 'is_refiner', 'sample', 'metric', 'value']]
         scores.to_csv(join(self.config.evaluation_dir, 'LMM/per_genome_metrics.csv'), index=None)
 
         # Run the LMM and write output to disk
         run_R_script('LMM_optimal_mag_pipeline', join(self.config.evaluation_dir, 'LMM'), 'true')
-        # plot data if needed
-        if plots:
-            for by in ['binner', 'binning-mode', 'assembler']:
-                for metric in ['fscore', 'precision', 'recall']:
-                    order = ['MaxBin2', 'VAMB', 'CONCOCT', 'METABAT2', 'SemiBin2', 'COMEBin']
-                    ax = plot_pipeline_performance_model(
-                        pd.read_csv(join(self.config.evaluation_dir, 'LMM', f'all_pipelines_{metric}.csv')), by=by, y_name=metric, order=order
-                    )
-                    plot_unlabelled_version(ax, join(utls.MANU_FIGS, 'Fig2', 'MAG_pipeline_LMM_fscore_binner'),ylower=-0.05, yupper=1.3,show=False)
+        ## plot data if needed
+        #if plots:
+        #    for by in ['binner', 'binning-mode', 'assembler']:
+        #        for metric in ['fscore', 'precision', 'recall']:
+        #            order = ['MaxBin2', 'VAMB', 'CONCOCT', 'METABAT2', 'SemiBin2', 'COMEBin']
+        #            ax = plot_pipeline_performance_model(
+        #                pd.read_csv(join(self.config.evaluation_dir, 'LMM', f'all_pipelines_{metric}.csv')), by=by, y_name=metric, order=order
+        #            )
+        #            plot_unlabelled_version(ax, join(utls.MANU_FIGS, 'Fig2', 'MAG_pipeline_LMM_fscore_binner'),ylower=-0.05, yupper=1.3,show=False)

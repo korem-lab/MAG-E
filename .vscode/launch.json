@@ -133,5 +133,16 @@
             "console": "integratedTerminal",
             "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
         },
+        {
+            "name": "evaluate-pipelines",
+            "type": "python",
+            "request": "launch",
+            "module": "maggie",
+            "args": ["evaluate-pipelines"],
+            "cwd": "/insomnia001/depts/pmg/users/ic2465/MAG-E",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "python": "/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/maggie/bin/python"
+        },
     ]
 }

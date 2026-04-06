@@ -6,14 +6,14 @@ library(emmeans)
 library(dplyr)
 
 # read in df
-args <- commandArgs(trailingOnly = True)
+args <- commandArgs(trailingOnly = TRUE)
 usage <- "Usage: Rscript <exe> <path> <exclude_refiners ? true|false>"
 if (length(args) < 2) {
   stop(paste("Not enough arguments.\n", usage), call. = FALSE)
 }
 path <- args[1]
 exclude_refiners <- tolower(args[2]) == "true"
-df <- read.csv(paste(path, "per_genome_metrics.csv", sep="/")
+df <- read.csv(paste(path, "per_genome_metrics.csv", sep="/"))
 
 # prep data
 df <- mutate(df,
@@ -28,7 +28,7 @@ df <- mutate(df,
 )
 # drop refiners from analysis
 if (exclude_refiners) {
-    df <- df[!df$is_refiner,]
+    df <- df[df$is_refiner == "False",]
 }
 
 # core analysis function
@@ -92,7 +92,6 @@ analyze_data = function(df, metric) {
   write.csv(emm_df, paste0(path, '/all_pipelines_', mout, '.csv'), quote = FALSE)
   write.csv(pairs_df, paste0(path, '/all_pairs_', mout, '.csv'), quote=FALSE)
 }
-
 analyze_data(df, 'cov_fs')
 analyze_data(df, 'cov_pr')
 analyze_data(df, 'cov_rc')
