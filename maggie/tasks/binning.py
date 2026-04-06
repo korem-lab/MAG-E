@@ -365,14 +365,13 @@ class Refiner(ABC):
 class DAS_ToolRefiner(Refiner):
     name = 'DAS_Tool'
     exec = 'DAS_Tool'
-    def run_binning(self, task_out_dir, refiner_options, pipelines, ppln_bin_out, ppln_asm_out, target_sample, threads=8, **kwargs):
+    def run_binning(self, task_out_dir, refiner_options, pipelines, ppln_bin_out,asm_dir, target_sample, threads=8, **kwargs):
         summaries = list()
         bin_dir = join(task_out_dir, f'output/bins')
         makedirs(bin_dir, exist_ok=True)
         input_dir = join(task_out_dir, 'input') 
         makedirs(input_dir, exist_ok=True)
 
-        assert len(set(ppln_asm_out)) == 1, Exception("DAS_Tool requires the all binning solutions to operate on the same assembly.")
         for i, bin_out in enumerate(ppln_bin_out):
             bins = glob.glob(join(bin_out, 'output/bins/*.fasta'))
             das_summary = join(input_dir, f'ppln_{i}_das_summary.tsv')
@@ -383,7 +382,7 @@ class DAS_ToolRefiner(Refiner):
                     hdrs += [(e.strip()[1:], bin_name) for e in fin if e.startswith('>')]
             pd.DataFrame(hdrs).to_csv(das_summary, header=None, index=None, sep='\t')
             summaries.append(das_summary)
-        contigs = softlink_assembly_to_taskdir(ppln_asm_out[0], target_sample, task_out_dir)
+        contigs = softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
         contig2bin = ','.join(summaries)
         run(
             f'DAS_Tool -t {threads} {refiner_options} -i {contig2bin} -c {contigs} -o {bin_dir} --write_bin_evals --write_bins --write_unbinned',

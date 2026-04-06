@@ -1,15 +1,15 @@
 import pandas as pd
 import numpy as np
 from .tasks import quality_control as qc 
-from os.path import join, exists
+from os.path import join, exists, basename
 from .utils import parse_read_counts, parse_quality_control_table
 
 
 def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, read_counts=None):
     rprt = list()
     for e in manifest.task_out_dir:
-        if exists(e):
-            rprt.append(pd.read_csv(e,'output/binning_table.csv'))
+        if exists(join(e, 'output/binning_table.csv')):
+            rprt.append(pd.read_csv(join(e,'output/binning_table.csv'), index_col=0))
         else:
             print('Missing binning table: ', e)
     rprt = pd.concat(rprt)
@@ -19,7 +19,7 @@ def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, rea
             t = manifest.iloc[i, :]
             if exists(join(t.task_out_dir, 'output/qc_table.csv')):
                 qctbl = parse_quality_control_table(join(t.task_out_dir, 'output/qc_table.csv'))
-                qc_measures = [m for q in t.qc_tools for m in getattr(qc, 'QCTool'+q).measures]
+                qc_measures = [m for q in t.qctools for m in getattr(qc, q+'QCTool')().qc_measures]
                 qc_measures += ['bin', 'task_name']
                 qctbls.append(qctbl[qc_measures])
             else:
@@ -28,6 +28,7 @@ def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, rea
         float_cols = qctbls.select_dtypes(include=['float']).columns
         qctbls[float_cols] = qctbls[float_cols].astype(np.float32)
         rprt = pd.merge(rprt, qctbls, left_on=['task_name', 'representative_bin'], right_on=['task_name', 'bin'],how='left')
+        assert rprt[rprt.TP & rprt.bin.isna()].empty
     if add_cp:
         assert Exception # This needs fixing
         asm = manifest.assembler.iloc[0] 
@@ -45,15 +46,16 @@ def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, rea
         assert exists(read_counts)
         read_counts = parse_read_counts(read_counts)
         target_samples = manifest.target_sample.unique()
-        simulation_dir = manifest.iloc[0,'simulation_dir']
+        simulation_dir = manifest.iloc[0].simulation_dir
         abundance_map = pd.concat(
             [
                 pd.read_csv(join(simulation_dir, f'{s}_metagenome_spec.csv')) for s in target_samples
             ]
         )[['Sample_file', 'genome', 'StrainAbund']].rename({'Sample_file':'sample'}, axis=1)
         abundance_map['genome_n_reads'] = abundance_map.apply(
-            lambda x: read_counts[x['sample']] * x.StrainAbund, axis=1
+            lambda x: read_counts.loc[basename(x['sample'])].item() * x.StrainAbund, axis=1
         ).astype(int)
+        abundance_map['sample'] = abundance_map['sample'].apply(basename)
         abundance_map = abundance_map.set_index(['sample', 'genome'])
         rprt['genome_abundance'] = pd.Series(zip(rprt['sample'], rprt['genome'])).map(abundance_map.StrainAbund)
         rprt['genome_n_reads'] = pd.Series(zip(rprt['sample'], rprt['genome'])).map(abundance_map.genome_n_reads)
@@ -66,18 +68,19 @@ def construct_genome_metrics(rprt):
     metrics = compute_Fscore_metrics(rprt, ['task_name', 'genome'])
     return metrics
 
-def add_report_data(rprt, gm, manifest, qctools, is_wrapper):
+def add_report_data(rprt, gm, manifest):
 
     # there are per-genome measurements or variables that are important for downstream evaluations
     all_qc_measures = list()
+    qctools = list(set([x for l in manifest.qctools.drop_duplicates() for x in l]))
     for q in qctools:
-        all_qc_meausres += getattr(qc, 'QCTool'+q).measures
+        all_qc_measures += getattr(qc, q+'QCTool')().qc_measures
 
     gm.drop(
         all_qc_measures + [
             'genome_length', 'genome_abundance', 'genome_n_reads', 'is_isolate',
             'assembler', 'binning_mode', 'sample', 'assembler_options', 'binner_options',
-            'refiner', 'refiner_options', 'is_refiner'
+            'refiner', 'refiner_options'
         ], 
         errors='ignore', axis=1, inplace=True
     )
@@ -98,15 +101,15 @@ def add_report_data(rprt, gm, manifest, qctools, is_wrapper):
     gm['sample'] = gm.task_name.map(manifest.target_sample)
     gm['assembler_options'] = gm.task_name.map(manifest.assembler_options)
     gm['binner'] = gm.task_name.map(manifest.apply(
-        lambda x: f'{x.binner}{x.binner_summary_name}' if not x.is_refiner else f'{x.refiner}{x.refiner_summary_name}'
+        lambda x: f'{x.binner}{x.binner_summary_name}' if not x.is_refiner else f'{x.refiner}{x.refiner_summary_name}', axis=1
     ))
-    gm['assembler'] = gm.task_name.map(manifest.apply(lambda x: f'{x.assembler}{x.assembler_summary_name}'))
-    gm['binner_options'] =  gm.task_name.map(manifest.apply(lambda x: x.binner_options if not x.is_refiner else x.refiner_options))
+    gm['assembler'] = gm.task_name.map(manifest.apply(lambda x: f'{x.assembler}{x.assembler_summary_name}', axis=1))
+    gm['binner_options'] =  gm.task_name.map(manifest.apply(lambda x: x.binner_options if not x.is_refiner else x.refiner_options, axis=1))
     return gm
     
 def compute_Fscore_metrics(bt, groupby, property=None, coverage_based=True, selected_metric=None):
     metrics = [
-        bt.groupby(groupby).progress_apply(lambda x: f(x,w)).reset_index().rename({0:'value'},axis=1).assign(metric='cov_' + n if coverage_based else n)
+        bt.groupby(groupby).apply(lambda x: f(x,w)).reset_index().rename({0:'value'},axis=1).assign(metric='cov_' + n if coverage_based else n)
         for f, w, n in (
             [
                 e for e in [(precision, coverage_based, 'pr'), (recall, coverage_based, 'rc'), (fscore, coverage_based, 'fs')] 

@@ -2,6 +2,7 @@ import pandas as pd
 import os
 from os.path import join, exists
 import glob
+import numpy as np
 from pathlib import Path
 from itertools import product
 
@@ -233,20 +234,26 @@ class Project:
         # Build the reports. There is a report for each assembler, binner pair. 
         # A report contains the relevant information (genome, abundance, assigned bin, bin quality control)
         # for all (assembler, binner)-combo bin tasks. These reports are used to calculate the genome metrics.
-        binners = manifest.binner.unique()
-        assemblers = manifest.assemblers.unique()
-        os.makedirs(self.config.evaluation_dir)
-        for bn, ab in product(binners, assemblers):
-            _mnfst = manifest.loc[(manifest.binner == bn) & (manifest.assembler == ab)]
-            rprt = ev.construct_report(_mnfst, add_cp=False)
+        os.makedirs(self.config.evaluation_dir, exist_ok=True)
+        bnab = manifest[['binner', 'assembler', 'is_refiner']].dropna().drop_duplicates().values
+        rfab = manifest[['refiner', 'assembler', 'is_refiner']].dropna().drop_duplicates().values
+        combos = np.vstack([bnab, rfab])
+        for i in range(combos.shape[0]):
+            bn, ab, is_refiner = combos[i]
+            if is_refiner:
+                _mnfst = manifest.loc[(manifest.refiner == bn) & (manifest.assembler == ab)]
+            else:
+                _mnfst = manifest.loc[(manifest.binner == bn) & (manifest.assembler == ab)]
+            rprt = ev.construct_report(_mnfst, add_cp=False, read_counts=self.config.read_counts)
             rprt.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}_REPORT.parquet'))
 
         # Compute the per-genome metrics
-        for bn, ab in product(binners, assemblers):
+        for i in range(combos.shape[0]):
+            bn, ab, _ = combos[i]
             rprt = pd.read_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}_REPORT.parquet'))
             gm = ev.construct_genome_metrics(rprt)
             # these got dropped when constructing the genome metrics, all were doing here is adding them back
-            gm = ev.add_report_data(rprt, gm, manifest)
+            gm = ev.add_report_data(rprt, gm, manifest.copy())
             gm.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}.genome_metrics.parquet'))
     
     def evaluate_pipelines(self, precision, recall, plots=False):

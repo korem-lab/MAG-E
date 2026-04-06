@@ -4,6 +4,7 @@ import hashlib
 from subprocess import run, DEVNULL
 from functools import reduce
 from itertools import product
+from collections import defaultdict
 import json
 from ..utils import parse_binning_mode_datasets, write_done_flag, rm_dir, get_contig_name, remove_fasta_ext
 from . import assembly as ab, binning as bn, quality_control as qc
@@ -27,6 +28,15 @@ def get_summary_names(data, dtype):
     summary_names.loc[mask, 'sname'] = ''
     return summary_names
 
+def make_key_map():
+    counter = 1
+    def new_id():
+        nonlocal counter
+        val = counter
+        counter += 1
+        return val
+    return defaultdict(new_id)
+
 def make_manifest(
     assemblers, binners, modes, refiners, qctools, simulation_dir, 
     assembly_cache, bintask_dir, project_base
@@ -46,15 +56,15 @@ def make_manifest(
     bsmry = get_summary_names(binners, 'bn')
     asmry = get_summary_names(assemblers, 'ab')
 
-    bintask_counter = set()
-    assembly_counter = set()
+    bintask_counter = make_key_map()
+    assembly_counter = make_key_map()
     tasks = list()
     for (ab, abo), (bn, bno), mode in product(assemblers, binners, modes):
 
         # abo and bno are respectively the assembly options and binning options. 
         # For each option copbination, we make a separate directory
-        assembly_counter.add((ab, abo))
-        bintask_counter.add((ab, abo, bn, bno, mode))
+        asm_num = assembly_counter[(ab, abo)]
+        bin_task_num = bintask_counter[(ab, abo, bn, bno, mode)]
         spec = {
             'simulation_dir': simulation_dir,
             'assembler': ab, 'assembler_options': abo, 'binner': bn, 'binner_options': bno,
@@ -69,24 +79,27 @@ def make_manifest(
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
-            spec['samples'] = [trgt] + list(set(df.dataset.to_list()) - {trgt})
-            spec['task_out_dir'] = join(bintask_dir, f'bin_task_{len(bintask_counter)}', trgt)
-            spec['asm_dir'] = join(assembly_cache, f'assembly_task_{len(assembly_counter)}', trgt)
+            spec['samples'] = [trgt] + sorted(list(set(df.dataset.to_list()) - {trgt}))
+            spec['task_out_dir'] = join(bintask_dir, f'bin_task_{bin_task_num}', trgt)
+            spec['asm_dir'] = join(assembly_cache, f'assembly_task_{asm_num}', trgt)
             tasks.append(spec.copy())
 
 
     for (refiner, ro, pipelines) in refiners:
-        bintask_counter.add((refiner, ro, tuple(pipelines)))
+        bin_task_num = bintask_counter[(refiner, ro, tuple(pipelines))]
+        asm_num = assembly_counter[(pipelines[0][0], pipelines[0][1])]
         spec = {
             'qctools': qctools, 'simulation_dir': simulation_dir, 'is_refiner': True,
-            'refiner': refiner, 'refiner_options': ro, 'pipelines': pipelines
+            'refiner': refiner, 'refiner_options': ro, 'pipelines': pipelines,
+            'assembler': pipelines[0][0], 'assembler_options':pipelines[0][1]
         }
         spec['refiner_summary_name'] = rsmry.loc[(rsmry.refiner == refiner) & (rsmry.ro == ro) & (rsmry.pipelines == pipelines)].sname.item()
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
-            spec['samples'] = [trgt] + list(set(df.dataset.to_list()) - {trgt})
-            spec['task_out_dir'] = join(bintask_dir, f'bin_task_{len(bintask_counter)}', trgt)
+            spec['samples'] = [trgt] + sorted(list(set(df.dataset.to_list()) - {trgt}))
+            spec['task_out_dir'] = join(bintask_dir, f'bin_task_{bin_task_num}', trgt)
+            spec['asm_dir'] = join(assembly_cache, f'assembly_task_{asm_num}', trgt)
             tasks.append(spec.copy())
             
     for spec in tasks:
@@ -152,7 +165,6 @@ def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
             t = refine_tasks.iloc[i, :]
             if force_refine or not task_done(t, 'bin', clear=True):
                 ppln_bin_out = list()
-                ppln_asm_out = list()
                 for (ab, abo, bn, bno, mode) in t.pipelines:
                     # select bin task
                     bt = bin_tasks.loc[
@@ -163,8 +175,7 @@ def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
                     assert len(bt) == 1
                     # get the path
                     ppln_bin_out.append(bt.task_out_dir.item())
-                    ppln_asm_out.append(bt.asm_dir.item())
-                run_bin(t, threads, refine=True, ppln_bin_out=ppln_bin_out, ppln_asm_out=ppln_asm_out)
+                run_bin(t, threads, refine=True, ppln_bin_out=ppln_bin_out)
 
 def run_prep(spec, threads):
     print('run_prep:', spec.task_name, flush=True)
@@ -172,15 +183,14 @@ def run_prep(spec, threads):
     b.run_prep(**(spec.to_dict() | {'threads':threads}))
     write_done_flag(spec.task_out_dir, name='prep')
 
-def run_bin(spec, threads, refine=False, ppln_bin_out=None, ppln_asm_out=None):
+def run_bin(spec, threads, refine=False, ppln_bin_out=None):
     print('run_bin:', spec.task_name,flush=True)
     b = getattr(bn, (spec.binner + 'Binner') if not refine else (spec.refiner + 'Refiner'))()
     spec.binner_options = '' if spec.binner_options == 'default' else spec.binner_options
     spec.refiner_options = '' if spec.refiner_options == 'default' else spec.refiner_options
     if refine:
         assert ppln_bin_out 
-        assert ppln_asm_out
-        aux = {'ppln_bin_out':ppln_bin_out, 'ppln_asm_out':ppln_asm_out, 'threads':threads}
+        aux = {'ppln_bin_out':ppln_bin_out, 'threads':threads}
     else:
         aux = {'threads':threads}
     b.run_binning(**(spec.to_dict() | aux))
@@ -200,20 +210,23 @@ def run_quality_control(manifest, force=False, threads=8):
         tables = list()
         for q in t.qctools:
             q = getattr(qc, q+'QCTool')()
+            if not q.has_bins(t.task_out_dir):
+                continue
             if not q.done(t.task_out_dir):
                 q.run(**(t.to_dict() | {'threads':threads}))
             tables.append(q.to_qctable(**(t.to_dict() | {'threads':threads})))
-        qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
-        qc_table['task_name'] = t.task_name
-        qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
+        if tables:
+            qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
+            qc_table['task_name'] = t.task_name
+            qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
 
 def construct_binning_tables(manifest):
     for i in range(len(manifest)):
-        t = manifest.loc[i,:]
+        t = manifest.iloc[i,:]
         if t.is_refiner:
-            b = getattr(bn, t.refiner+'Refiner')
+            b = getattr(bn, t.refiner+'Refiner')()
         else:
-            b = getattr(bin, t.binner+'Binner')
+            b = getattr(bn, t.binner+'Binner')()
         bins = b.bins_as_fasta(join(t.task_out_dir, 'output/bins'))
         bint = compute_binning_table(t.task_name, t.target_sample, bins, t.asm_dir)
         bint.to_csv(join(t.task_out_dir, 'output', 'binning_table.csv'))
@@ -250,6 +263,7 @@ def compute_binning_table(task_name, sample, bins, gt_dir):
     binning_table['FP'] = False
     # Computing FP is more involved.
     fp = prod.groupby('bin').apply(compute_fp).reset_index(drop=True)
+    fp = fp[['genome','contig','contig_length','sample','key', 'ref', 'ref_start', 'ref_end', 'genome_length']].drop_duplicates()
     fp['FP'] = True
     fp['TP'] = False 
     fp['FN'] = False
@@ -309,7 +323,7 @@ def compute_fp(df):
     fps.drop('genome',axis=1,inplace=True)
     fps=fps.reset_index()
     fps.drop('level_1',axis=1,inplace=True)
-    return fps[['genome','contig','contig_length','sample','key', 'ref', 'ref_start', 'ref_end', 'genome_length']].drop_duplicates()
+    return fps 
 
 def task_done(bntsk, stage='all', report=False, only_not_done=False, clear=False):
     # TODO ADD QC STAGE, and BIN TABLE STAGE

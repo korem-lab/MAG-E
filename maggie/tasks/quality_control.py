@@ -11,6 +11,10 @@ class QCTool(ABC):
     exec: str
     qc_measures: list
 
+    def has_bins(self, task_out_dir):
+        bins = glob.glob(join(task_out_dir, 'output/bins/*.fasta'))
+        return len(bins)>0
+
     @abstractmethod
     def run(self, task_out_dir, threads, **kwargs):
         ...
