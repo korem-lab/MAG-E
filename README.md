@@ -15,7 +15,6 @@ python -m maggie --help
 This will print the master help for MAG-E. Throughout this readme, note that each of the commands may have options which you can read about by calling `--help` on the command. 
 
 ## Installation
-We gotta pip install InSilicoSeq. We need pandas==2.3.3 to work with dRep. 
 
 ## Starting a new project 
 MAG-E operates on "projects" which are directories with a defined structure and content. A project houses all the files required by MAG-E to simulate reads from a dataset and perform an evaluation of MAG pipelines (herein, "pipelines") on that dataset. Generally, you want a project for each dataset you wish to evaluate.
