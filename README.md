@@ -287,7 +287,7 @@ Which could, for example, check the performance of contigs with prophage annotat
 origin of replication annotations, or with different numbers of A-repeats of length > 10, 
 however the user should define it.
 
-### Project caching
+## Project caching
 MAG-E caches projects, allowing the user to work on multiple projects with a streamlined command line, and switch between them. MAG-E does this by caching project names and filesystem locations in `./MAG-E/.project_cache.csv`. One project has a "current" status, which MAG-E will automatically load the configuration of when running commands. We can retrieve the current project with
 ```
 python -m maggie get-current
