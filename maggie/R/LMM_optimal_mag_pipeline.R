@@ -74,7 +74,7 @@ analyze_data = function(df, metric) {
   res_df = bind_rows(res_df, res_df_tmp)
   
   # write out
-  write.csv(res_df, paste0(path, '/optimal_pipeline_cat_', mout, '.csv'), quote=FALSE)
+  write.csv(res_df, paste0(path, '/pipeline_categories_', mout, '.csv'), quote=FALSE)
 
   # Testing the best pipeline overall
   emm <- emmeans(m, ~ binner * assembler * binning_mode)
@@ -88,7 +88,6 @@ analyze_data = function(df, metric) {
   pairs_df = as.data.frame(pairs(emm))
   best_label = with(best, paste(binner, assembler, binning_mode, sep= " "))
   against_best = subset(pairs_df, grepl(best_label, contrast))
-  write.csv(against_best, paste0(path, '/optimal_pipeline_vs_best_', mout, '.csv'), quote=FALSE)
   write.csv(emm_df, paste0(path, '/all_pipelines_', mout, '.csv'), quote = FALSE)
   write.csv(pairs_df, paste0(path, '/all_pairs_', mout, '.csv'), quote=FALSE)
 }

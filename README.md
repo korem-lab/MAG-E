@@ -2,108 +2,90 @@
 
 Welcome to MAG-E, a framework for evaluating metagenome assembled genome (MAG) construction pipelines at scale with ground truth!
 
-This readme provides an explaination of how to run MAG-E on real metagenomic datasets to: 
-- Construct realistic simulations of the dataset
-- Evaluate MAG-generation pipelines on the simulated dataset dataset
+This readme explains of how interact with MAG-E command-line interface, in order to:
+- Construct realistic simulations of the dataset.
+- Evaluate MAG-generation pipelines on the dataset.
+- Evaluate MAG-generation pipelines with non-default parameters (e.g non-default assembly parameters) to explore how the parameter space impacts MAG construction performance.
+- Evaluate MAG-generation pipelines on particular classes of contigs to explore how well particular genomic elements are recovered.
+
+Interacting with MAG-E on the command-line is done by running MAG-E as a python module, like so:
+```
+python -m maggie --help
+```
+This will print the master help for MAG-E. Throughout this readme, note that each of the commands may have options which you can read about by calling `--help` on the command. 
+
 ## Installation
 We gotta pip install InSilicoSeq. We need pandas==2.3.3 to work with dRep. 
-## Setting up new projects
 
-MAG-E operates over project directories, which have a specific structure and contents.
-We begin by initializing a new project.
+## Starting a new project 
+MAG-E operates on "projects" which are directories with a defined structure and content. A project houses all the files required by MAG-E to simulate reads from a dataset and perform an evaluation of MAG pipelines (herein, "pipelines") on that dataset. Generally, you want a project for each dataset you wish to evaluate.
 
 ### Initializing a project
+To start a new project run:
 ```
-python -m maggie initalize-project  /absolute/path/to/maggie/projects/ myproject
+python -m maggie initialize-project  /absolute/path/to/launch/ myproject
 ```
 
-Running `initialize-project` constructs a new project `myproject` at `/absolute/path/to/maggie/projects`
-and, inside the project directory, writes a configuration yaml file: 
+Which constructs a new project directory, `myproject`, at `/absolute/path/to/launch/` and inside the project writes a configuration yaml file: 
 ```
-(maggie) izaak@dhcp-10-118-17-29 MAG-E % ls ../testingmaggie/myproject 
+ls ../launch/myproject 
 config.yaml
 ```
 
-### Configuring MAG-E
+### Configuring MAG-E - required files
 
-MAG-E uses the `config.yaml` to organize the entire project. 
-The inputs MAG-E requires and the pipelines MAG-E will evaluate are both specified through the `config.yaml`. After initialization, `config.yaml` looks like: 
+The configuration file `config.yaml` is central to MAG-E's organization of the entire project. The required input files and pipelines MAG-E will evaluate are both specified through the config. After initialization, `config.yaml` looks like: 
 
 ```
-project_base: /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/testingmaggie/myproject
-project_name: myproject
-use_api: 'yes'
-genomes_dir: 'NULL'
-samples_dir: 'NULL'
-prefix1: 'NULL'
-read_counts: 'NULL'
-cluster_assignments: 'NULL'
+project_base: /absolute/path/to/launch/myproject
+project_name: myproject 
 assemblers: [[ASM, OPT], [ASM, OPT]]
 binners: [[BIN, OPT], [BIN, OPT]]
 binning_modes: [MODE, MODE]
-refiners: [[REFN, [[ASM, ASMOPT, BIN, BINOPT, MODE], [ASM, ASMOPT, BIN, BINOPT, MODE]]]]
+cluster_assignments: 'NULL'
+genomes_dir: 'NULL'
+prefix1: 'NULL'
 qctools: ['NULL', 'NULL']
+read_counts: 'NULL'
+refiners: [[REFN, REFN_OPT, [[ASM, ASMOPT, BIN, BINOPT, MODE], [ASM, ASMOPT, BIN, BINOPT, MODE]]]]
+samples_dir: 'NULL'
+use_api: 'yes'
 ```
 
-Three fields are already populated: the project base path, name, and the `use_api` token set to `yes`, which determines how the bins from each MAG-generation pipeline will be provided to MAG-E (explained further below).
+Three fields are already populated: the project base, project name, and the `use_api` flag, which set to `yes`. This flag specifies how the bins from each pipeline will be provided to MAG-E in order for it to run evaluations (See "Constructing bins for evaluation").
 
-We must now populate the inputs required by MAG-E:
-- `genomes_dir`:
-Absolute path to directory containing all genomes that will form the MAG-E database. Genomes must be gzipped fasta files (prefix `.fasta.gz`).
+We must now populate the `config.yaml` with the following required inputs:
+- `genomes_dir`: Absolute path to directory containing genomes that will form the MAG-E database. Each genome must be in a separate gzipped fasta file (`<genome>.fasta.gz`), where `<genome>` is the genome name. In the genome files, contig headers must have the format `><genome>_<n>`, where `n` is a unique number (e.g `>genomeA_1`, `>genomeA_2`, ...).
 
-- `samples_dir`:
-Absolute path to directory containing all gzipped fastq files (prefix `.fastq.gz`).
+- `samples_dir`: Absolute path to directory containing all gzipped fastq files (prefix `.fastq.gz`). Paired end data is expected. 
 
-- `prefix1`:
-prefix of pair 1, typically either `_R1` or `_1`
+- `prefix1`: Prefix for the first read file in the pair, typically either `_R1` or `_1`.
 
-- `read_counts`:
-Name of the csv file specifying the number of read pairs for each sample. This must be moved
-inside the project directory.
-It should have the format:
+- `read_counts`: Name of a csv file specifying the number of read pairs for each sample. This must be moved inside the project directory (i.e directly under `project_base`). It should have the format:
 ```
 sample,count
 SampleA,10000
 ...
 ```
 
-- `cluster_assignments`:
-The name of the csv, specifying the species-level cluster assignments of each genome in `genomes_dir`. 
-This csv must be moved into the project directory.
-It has four required fields: `genome`, `SpeciesRepr`, and `GenomeType` and `N50`, `Length`. `genome` is the name 
-of a genome which must exist at `genomes_dir/<genome>.fasta.gz`. `SpeciesRepr`
-specifies the species-level cluster assignments. Genomes with the `SpeciesRepr` value are in the same cluster, the `SpeciesRepr` value (which must be a genome `genomes`) acts as the cluster representative, `N50` is the N50 of each genome fasta.
-`GenomeType` specifies whether the genome is a metagenome-assembled genome, or sequenced as an isolate. 
-Note that, MAG-E will only evaluate performance against the Isolate genomes. An example of the structure for the `cluster_assignments` csv is as follows:
+- `cluster_assignments`: The name a csv, specifying the species-level cluster assignments of each genome in `genomes_dir`. Like `read_counts` it must also be moved into the project directory. There are five required fields: `genome`, `SpeciesRepr`, `GenomeType` `N50`, and `Length`. `genome` is the name of a genome, whose file must exist at `genomes_dir/<genome>.fasta.gz`. `SpeciesRepr` lists the species-level cluster identifier for each genome. The `SpeciesRepr` values must themselves be genomes present in the `genome` columns, as they also define which genome in the species is the cluster representative. `N50` is the N50 of each genome fasta, and `Length` is the base pair length of the genome. Finally, `GenomeType` specifies whether the genome is a metagenome-assembled genome or sequenced as an isolate. It can take the values `MAG` or `Isolate`. MAG-E will only evaluate performance against `Isolate` genomes. An example of the structure for the `cluster_assignments` csv is as follows:
 ```
-genome,SpeciesRepr,GenomeType
-genomeA,genomeA,Isolate
-genomeB,genomeA,MAG
-genomeC,genomeA,Isolate
-genomeD,genomeD,Isolate
+genome,SpeciesRepr,GenomeType,N50,Length
+genomeA,genomeA,Isolate,25000,4000000
+genomeB,genomeA,MAG,5000,1000000
+genomeC,genomeA,Isolate,100000,2000000
+genomeD,genomeD,Isolate,80000,2000000
 ```
+To clarify the above descriptions, genomes A-C are in the same species cluster, with A being the representative.
 
-We must also specify the MAG-generation pipelines MAG-E will evaluate.
-A MAG-generation pipeline is a combination of an assembler (and variable options), binner (and variable options), and binning mode. Pipelines are specified by populating the following:
-- `assemblers`:
-`assemblers` must be a list of lists. Each element of the outer-list is a 2-tuple, consisting of the name
-of an assembler and the command line options used to run the assembler. `default` is used
-to run the assembler with default options. For example, say we want to evaluate pipelines with MEGAHIT
-in default, MEGAHIT with no bubble merging but --min-count of 5, and metaSPAdes in default. We would populate `assemblers` with `[['MEGAHIT', 'default'], ['MEGAHIT', '--no-bubble --min-count 5'], ['metaSPAdes', 'default]]`.
+### Configuring MAG-E - specifying pipelines
 
-- `binners`:
-`binners` follows the same format as `assemblers`. So, `[['METABAT2','default'], ['CONCOCT','default']]` would evaluate METABAT2 and CONCOCT MAG-pipelines in default. 
+We now add pipelines to the configuration for MAG-E to evaluate. A pipeline consists of assembly, followed by binning in a particular mode, followed by potential refinement, and finally quality control. For each stage different algorithms that can be used, and different combinations of algorithms with their associated parameters give different pipelines. We need to specify which algorithms we wish to use for each stage. 
+- `assemblers`: A list of lists. Each element of the outer-list is a 2-tuple, consisting of an assembler name followed by a string of command-line arguments used to run it. `default` is used to run the assembler with default options. For example, say we want to evaluate pipelines with MEGAHIT in default, MEGAHIT with no bubble merging but --min-count of 5, and metaSPAdes in default. We would populate `assemblers` with `[[MEGAHIT, default], [MEGAHIT, '--no-bubble --min-count 5'], [metaSPAdes, default]]`.
 
-- `binning_mode`:
-Binning mode determines which sample's information will be used to help bin a target sample. For example,
-in `single` only information from the target sample will be used. Binning mode is very general, 
-and allows any set of user-defined samples to be used to bin bin the target. For example, say,
-we want to try `single`, `all`, `mash20`, and `mash3`, where `all` uses all samples in the dataset.
-`mash20` uses the 20 closest samples to the target defined by mash distance, 
-and `mash3`, which uses the closest 3. To achieve this, you must populate
-binning mode with `['single', 'all', 'mash20', 'mash3']` and in the project directory, place
-the files `all_datasets.csv`, `mash20_datasets.csv`, `mash3_datasets.csv`. 
-These files all have the same format. For example, `mash3_datasets.csv` could look like:
+- `binners`: A list of lists. Follows the same format as `assemblers`. So, `[[METABAT2,default], [CONCOCT,default]]` would evaluate METABAT2 and CONCOCT MAG-pipelines in default. 
+
+- `binning_mode`: A list of string tokens. When binning a sample (the "target sample") binning mode determines which other samples will be used. Binning mode is very general, allowing any set of user-defined samples to bin the target. Say we want to try the binning modes `single`, `all`, `mash20`, and `mash3`, where `single` uses only the target, `all` uses all samples in the dataset, `mash20` uses the 20 closest samples to the target defined by mash distance, and `mash3`, which uses the closest 3. We would first populate binning mode with `[single, all, mash20, mash']`. Then, for each token `<token>` in the list, we must place a file `<token>_datasets.csv` in the project directory. In this case the files `single_datasets.csv`, `all_datasets.csv`, `mash20_datasets.csv`, `mash3_datasets.csv`. These files must then list the samples that will be used to bin each target sample. For example, `mash3_datasets.csv` could look like:
 ```
 target_sample,dataset
 sampleA,sampleA
@@ -113,116 +95,128 @@ sampleB,sampleB
 sampleB,sampleD
 sampleB,sampleE
 ```
-In this case, when running pipelines with `mash3`, MAG-E will supply only the samples A,B,C when binning the target sample A with the various specified binners.
+`target_sample` and `dataset` are the required headers, where each row specifies a target sample, and one sample that will be used to help bin the target when run in this mode. In the example, when running pipelines with mode `mash3`, MAG-E will supply only the samples A,B,C to binners when binning the target sample A.
 
-- `refiners`:
-`refiners` has a more complex structure. A binning refiner integrates binning outputs (each coming from potentially different pipleines) into a final output. `refiners` takes a list, each element of which has a `[REFN, REFN_OPT, [PIPELINES]]` structure, where `REFN` is the refiner name, `REFN_OPT` are the command line refiner options, and `PIPELINES` is a list of pipelines that the refiner will integrate over. For example, one may wish to evaluate DAS Tool integrated over 
-CONCOCT in `mash20` mode, when run on MEGAHIT assemblies with `--no-bubble` and `--min-count 5` parameters, and METABAT2 in `single` mode, when run on default metaSPAdes assemblies. This is encoded in the element `['DAS_Tool', 'default', [['MEGAHIT', '--no-bubble --min-count 5', 'CONCOCT', 'default', 'mash20'], ['metaSPAdes', 'default', 'METABAT2', 'default', 'single']]]`. We may also wish to evaluate DAS Tool with, say, CONCOCT and METABAT2 both run in `single` mode, on default MEGAHIT. Together the complete refiners list would look like `[['DAS_Tool', 'default', [['MEGAHIT', '--no-bubble --min-count 5', 'CONCOCT', 'default', 'mash20'], ['metaSPAdes', 'default', 'METABAT2', 'default', 'single']]], ['DAS_Tool', 'default', [['MEGAHIT', 'default', 'CONCOCT', 'default', 'single'], ['MEGAHIT', 'default', 'METABAT2','default', 'single']]]]`. A bit cumbersome..., but, hopefully straightforward. 
+- `refiners`: A list of lists. `refiners` has a more complex structure. A binning refiner integrates the binning outputs from different pipelines into a final output. Each element of the list passed to `refiners` has the form `[REFN, REFN_OPT, [PIPELINES]]`, where `REFN` is the refiner name, `REFN_OPT` is a string of command-line options for the refiner, and `PIPELINES` is the list of pipelines that the refiner will integrate over. For example, one may wish to run DAS Tool with default settings integrated over CONCOCT in `mash20` mode, when run on MEGAHIT assemblies with `--no-bubble` and `--min-count 5` parameters, and METABAT2 in `single` mode, when run the same assembly. This example would be encoded encoded as `[DAS_Tool, default, [[MEGAHIT, '--no-bubble --min-count 5', CONCOCT, default, mash20], [MEGAHIT, default, METABAT2, default, single]]]`. A bit cumbersome..., but, hopefully straightforward. Note that, currently, we require each pipeline to run on the same assembly, which many refiners expect. 
+- `qctools`: `qctools` A list of token. This specifies the quality control tools MAG-E will run on each bin. For example, to run CheckM2 and GUNC, one passes `['CheckM2', 'GUNC']`. 
 
-- `qctools`:
-`qctools` is a list of quality control tools that MAG-E will run on each bin. `qctools` takes a list.
-For example, to run CheckM2 and GUNC, one passes `['CheckM2', 'GUNC']` to qctools.
+### An example configuration.
+Here is an example of a complete configuration file. 
+```
+project_base: /insomnia001/depts/pmg/users/ic2465/launch/myproject
+project_name: myproject
+assemblers: [[MEGAHIT, default], [metaSPAdes, default]]
+binners: [[METABAT2, default], [CONCOCT, default]]
+binning_modes: [single, all]
+cluster_assignments: cluster_assignments.csv
+genomes_dir: /insomnia001/depts/pmg/users/ic2465/launch/myproject/genomes
+prefix1: R1
+qctools: [GUNC, CheckM2]
+read_counts: read_counts.csv
+refiners: [[DAS_Tool, default, [[MEGAHIT, default, CONCOCT, default, all], [MEGAHIT, default, METABAT2, default, single]]]]
+samples_dir: /insomnia001/depts/pmg/users/ic2465/launch/myproject/small_samples
+use_api: 'yes'
+```
+
+In this configuration, for all samples in `small_samples` we will run MEGAHIT and metaSPAdes in default, and bin them with METABAT2 and CONCOCT in default. MAG-E takes the product over the space of samples, binners, assemblers, plus refiners. In total there are 2 (assemblers) x 2 (binners) x 2 (binning_modes) + 1 (refiners). So nine pipelines that will be evaluated. If we add for example, `(MEGAHIT`, `--no-bubble --min-count 3)` we would now have 3 (assembler) x 2 (binners) x 2 (binning_modes) + 1 (refiners) = 13 pipelines evaluated. MAG-E therefore allows us explore how the parameter space of algorithms impact binning performance by treating the same algorithm run with different options as distinct. Pipelines with the same algorithm but different options get issues a distinct prefix (e.g, `MEGAHIT(1)`) such that they can be distinguished. MAG-E will run each pipeline over each sample. So, if we have 3 samples in the `samples_dir` we'd run a total of 27 MAG-generation tasks. 
 
 ### Verifying the project configuration.
 
-After populating the configuration running:
+We verify the configuration is valid by running 
 ```
 python -m maggie verify-project
 ```
-Checks that each file required by MAG-E is available in the config, sets up core directories,
-```
-TODO: LS THE CORE DIRECTORIES
-```
-and makes sure the assembler, binner, and refiner names specified in the profile match those
-supported by the MAG-E API. This check is only performed if (`use_api` is `yes`), as
-MAG-E supports evaluation of bins without using the API to allow for flexibilty in pipeline evaluation.
-See "Constructing bins for evaluation" for considering whether or not to use API to construct bins.
+This checks that each file required by MAG-E is present at the correct location, sets up core directories, and makes sure the tokens used for assemblers, binners, and refiners match those supported by the MAG-E API. This token check is only performed if `use_api` is `yes`, which assumes the algorithms MAG-E currently supports in its API will be used to construct bins. See "Constructing bins for evaluation" for considering whether to use the API or not.
 
-Note how we no longer need to specify the project name or directory? MAG-E caches projects and re-loads the project config to streamline the command line. See "Project caching" below for details. 
-## Required format for genome fasta
-Discuss here how they need to be in a format like MGYG, so a constant genome name, an underscore, and then contig name MGYG000000512_1. Fileames should be genometoken.fasta.gz
+We no longer need to specify the project name or directory. This is because projects are cached by MAG-E in the `.project_cache.tsv` file in the MAG-E repo. MAG-E can keep track of multiple projects at once using this cache. At any time, exactly one project the cache is set to the "current project" and MAG-E loads this project's configuration each time the command-line is used to streamline commands. See "Project caching" below for details. 
+
 ## Simulating datasets
 
-To simulate datasets, we firstwe make a MAG-E database of the input genomes. This involves clustering the genomes at the strain level, and constructing a Sylph sketch over them. See `--help` for options.
+Now we have a verified configuration, we can begin simulating datasets. Running 
 ```
 python -m maggie make-maggie-db
 ```
+creates a MAG-E database of the genomes in `genomes_dir`. Database construction involves clustering the genomes at the strain level, and constructing Sylph sketches over the genomes. 
 
-With the database constructed, we build mirror specifications of each sample, which 
-lists a set of genomes from the database that closely match the sample in ANI and abundance. 
-Specifications provide the input genomes for simulation and the ground truth for MAG-E evaluations.
+With the database constructed, we build mirror specifications of each sample. Each specification of a sample lists a set of genomes from the database that closely match it in ANI and abundance. Specifications define the set of genomes and their abundance that will be used to simulate samples, and provide ground truth for MAG-E evaluations.
 ```
 python -m maggie make-mirrors
 ```
 
-With the specification constructed, we can then simulate metagenomes.
+With the specification constructed, we can then simulate metagenomes. 
 ```
 python -m maggie simulate-mgx
 ```
+For each of these commands, check their `--help` to see possible options, for example, increasing the thread count. 
+
 ## Constructing bins for evaluation
 
-Now we've simulated datasets, we can construct bins using the pipelines specified in `config.yaml`. 
-To do this, we first need to construct a manifest of tasks. 
+Now we've simulated datasets we can start running pipelines and constructing MAGs. There are potentially many pipelines, and many MAG-generation tasks that MAG-E needs to keep track of in order to successfully perform evaluations. To keep track of all this information, MAG-E constructs a manifest, each row of which describes a particular MAG-generation task: which assembler, binner, refiner, and binning mode is running on which sample, and in which directories of the project the associated assemblies, binning outputs, quality control output, and MAG-E raw metrics can be found. We construct this manifest with
+
 ```
 python -m maggie construct-tasks
 ```
 
-This outputs `manifest.csv` in the project directory, which enumerates all MAG-generation tasks. Each task consists of assembly, followed by binning in a particular mode, followed by potential refinement, and finally quality control. The total number of tasks is the product over this space. For example, say `config.yaml` specified three samples, two assemblers both run with two different options, two binners both run with default options in two binning modes, plus one refiner with its pipeline. That's 3 (sample) x 4 (assembly tasks) x (4 bin tasks) + 3 (sample) x 1 refiner = 51 total tasks. `manifest.csv` contains a row for each task, and each row specifies the task composition and the directories where the output needs to be written for each task in order for MAG-E to run evaluations.
+which outputs `manifest.csv` in the project directory.
 
-### The task directory structure
-
-Over the product space there is redundancy; all 51 tasks rely on 12 assemblies (3 samples, 4 assembly tasks), and the one refiner relies upon avaiable binning outputs. To avoid redundant computation, MAG-E caches the assemblies such that all downstream tasks can use them, and the refiner will treat the pipelines it integrates over as "cached". For tasks to find the correct cached information, MAG-E relies upon a fixed directory structure, which `construct-tasks` creates. 
-
-Each assembly task has its own directory located in `assembly_cache`, with a subdirectory for each sample. In our example:
+### The MAG-generation task directory structure
+Running `construct-tasks` also constructs the directories where MAG-E will put the various outputs of the MAG-generation tasks. These directories have a defined structure, which MAG-E relies upon in order to correctly locate files. To avoid redundant computation, a MAG-generation task is decomposed into two stages: the assembly task and the binning task portions. This separation allows MAG-generation tasks that share same assembler (and assembler option) to use the same assembly files, rather than recomputing them every time. Each assembly task has its own directory located in `assembly_cache`, with a subdirectory for each sample. For the example `config.yaml` above where we run MEGAHIT and metaSPAdes in default, assuming three samples called `sampleA`, `sampleB` and `sampleC`, `assembly_cache` contains:
 ```
 assembly_cache/
-                assembly_task_1/
-                                sample1/
-                                sample2/
-                                sample3/
-                assembly_task_2/
-                                ...
-                assembly_task_3/
-                assembly_task_4/
+    assembly_task_1/
+                sampleA/
+                sampleB/
+                sampleC/
+    assembly_task_2/
+                sampleA/
+                sampleB/
+                sampleC/
 ```
-Each bin task (there are 17 in our example; 4 (assembler tasks) x 4 (bin tasks) + 1 (refiner)) has a directory in `bintask_dir` with the 
-same structure:
+Each of the leaf directories e.g `assembly_cache/assembly_task_1/sampleA`, should contain the assembly.
+
+The bin tasks rely upon the assemblies cached in `assembly_cache`. The number of bin tasks equals the number of MAG-generation tasks. In our example, there are nine total MAG-generation tasks, and so, there are nine bin task directories in `bintask_dir`:
 ```
 bintask_dir/
-            bin_task_1/
-                       sample_1/
+    bin_task_1/
+        sample_A/
+        sample_B/
+        sample_C/
+    bin_task_2/
 ...
-            bin_task_17
 ```
-
-In order for MAG-E to evaluate pipelines, the output of assembly and bin tasks must be placed in the correct directories. 
 
 ### Constructing assemblies and bins
 
-This is where the MAG-E API comes in. By default, `use_api` is `yes` (in `config.yaml`), in which case MAG-E will use the assemblers, binners, and refiners that are internally supported in its API to perform the assembly and bin tasks. MAG-E will automatically write the assembly and binning outputs to the correct locations specified in `manifest.csv`. Using the API is the most "hands-off" way to construct assemblies and bins for evaluation. First we construct assemblies with:
+In order for MAG-E to perform evaluations of the various pipelines, we now need to output the assemblies and bins from each pipeline into the correct directories such that MAG-E can keep track. The `manifest.csv` already tells us which `assembly_cache` and `bintask_dir` subdirectory to place each assembly and binning output from every MAG-generation task for MAG-E to work successfully. There are two ways to use it to construct assemblies and bins. 
+
+The first is to use the MAG-E API, which is used when `use_api` is set to `yes` in the `config.yaml`. By default the API is used. In this case, MAG-E will use the internally supported assemblers, binners, and refiners in order to run the MAG-generation tasks and automatically populate the `assembly_cache` and `bintask_dir` according to the manifest. The major benefit is that this is the most "hands-off" way to construct assemblies, bins, and correctly populate the directories. The downside is that, currently, each MAG-generation task is run sequentially, and so depending on your compute infrastructure this can be slow if you have many tasks. The supported algorithms can be found in the repo subdirectory `./maggie/tasks`, and are simple python class interfaces that wrap each algorithm, run it on the command-line, and format the outputs to work with the downstream part of MAG-E. These were built with the idea that it would be straightforward expand the automated part of assembly and bin construction with ease (see Developer Section to understand the interface and how to extend). 
+
+Using the API is straightforward. To run the assembly tasks:
 ```
 python -m maggie run-assembly
 ```
-which populates the `assembly_cache`, and then we run the binning and refiner tasks with:
+which populates the `assembly_cache` according to the manifest. Many binners require read-to-contig mapping (or count) information as input to their algorithms. We compute the `bam` files with 
+```
+python -m maggie run-mapping
+```
+which maps every `dataset` sample defined in a binning mode csv against every `target_sample` and places these files in the `assembly_cache`. 
+
+Then, to run the binning and refiner tasks:
 ```
 python -m maggie run_binning
 ```
-After binning completes, MAG-E has written the bins for each task to the `output/bins` directory. Each bin is a separate fasta file, called `bin.<n>.fasta`.
-The assemblers, binners, and refiners that MAG-E supports can be found in the `./maggie/tasks` directory of the MAG-E repository. 
-Advanced users can extend the API, adding new binners, assemblers, or refiners by writing their own python classes which implement the interfaces. 
+which populates the `bintask_dir` according to the manifest. 
 
-If a user decides not to use the API (i.e `use_api` is `no`; which is set with `--use_api no` when running `initialize-project`) then
-the user is expected to populate the assembly_cache and bintask_dir themselves. There are two main benefits of not using the API. First,
-it allows you to use any whichever compute infrastructure and workflows (e.g your own highly-parallel scripts on a slurm infrastructure) make the most sense for a large-scale assembly and binning. Second, since binning algorithm development is an active research area, it allows complete flexibility in how you decide construct bins for MAG-E evaluation. You can bin any way you want, testing any new idea you wish, so long as you: 1) come up with a name for the binning approach (e.g "`MyNewBinner`" and specifiy it in the `config.yaml` as discussed above; and, 2) you put the bins for "`MyNewBinner`" in fasta format into the `output/bins` directories that the MAG-E `manifest.csv` has issued for the "`MyNewBinner`" tasks. 
+The second way to use the manifest to construct assemblies and bins is to query it to tell you the correctly location to put assemblies and bins, but put them there yourself, without using the API. 
+There a two main benefits for not using the API (`use_api` is `no`). First, it provides the most flexibility in how you construct the assemblies and bins. Many users have powerful compute infrastructures available to them, but with different architectures, and accepted workflows. Not using the API allows you to make use of whichever workflows and compute infrastructure makes the most sense for you to efficiently run lots of assemblies and binning tasks (e.g your own in-house slurm or sun grid workflows, aws batch jobs, or nextflow or snakemake scripts). The second major and very powerful advantage is that, you can bin in any way you want, testing any new idea you wish, and evaluate it with MAG-E. Since binning research is an active field, the API interface we offer may not fit a new approach. So long as you come up with a new `binner` token for the approach, e.g `MyCrazyBinner`, and add it to the config as discussed above, MAG-E can keep track of it, make `assembly_cache` and `bintask_dir` directories for it, and ultimately evaluate it.
 
-The MAG-E command `get-task-dir` returns the correct directory to put the assembly and binning output of a particular MAG-construction pipeline. It's extremely useful when not using the API. It requires a request (either `assembly` or `bin`) and a sample name (see `--help` for details). For example,
+The main downside is that you have to put the assembly and binning outputs in the correct locations, in the correct format. To help with this MAG-E implements the command `get-task-dir` which queries the the manifest and returns the correct directory to write an assembly or binning output for a particular MAG-generation task. It's extremely useful when not using the API for putting stuff in the correct place. It requires a request (either `assembly` or `bin`) and a sample name (see `--help` for details). Running with the example `config.yaml` from above. Suppose we want the correct assembly task directory for the MAG-generation task which runs `MEGAHIT` in default, `CONCOCT` in default, and binning mode `all` on sample `ERR113664`:
 ```
 pth=$(python -m maggie get-task-dir assembly ERR1136644 --assembler MEGAHIT --binner CONCOCT --binning-mode all)
 echo $pth
 /insomnia001/depts/pmg/users/ic2465/launch/myproject/assembly_cache/assembly_task_1/ERR1136644
 ```
-Requests the assembly task directory for the MEGAHIT assembly run with default options (`--assembler-option` not given) on sample `ERR1136644`. We returned this to the bash variable `pth` and then `echo`ed it to standard out. When requesting `assembly` the additional options are irrelevant.
-The exact same command, but requesting `bin` returns the bin task directory for the MEGAHIT assembly run with default options on sample `ERR1136644` followed by CONCOCT run default in binning mode `all`:
+Note that, since this is requesting the `assembly` task, one could drop the binner, and binning mode and get the same return value. Also, since `MEGAHIT` is run in default, the `--assembler-option` part of the query is not needed. The exact same query, but instead requesting `bin`, returns the bin task directory for MAG-generation task:
 ```
 pth=$(python -m maggie get-task-dir bin ERR1136644 --assembler MEGAHIT --binner CONCOCT --binning-mode all)
 echo $pth
@@ -234,47 +228,98 @@ pth=$(python -m maggie get-task-dir bin ERR1136644 --refiner DAS_Tool --pipeline
 echo $pth
 /insomnia001/depts/pmg/users/ic2465/launch/myproject/bintask_dir/bin_task_9/ERR1136644
 ```
-`get-task-dir` makes it easy to populate the correct assembly and bin task directories when using your own scalable workflows for assembly and binning. 
+
+For each assembly task, the contigs need to be added to the correct `assembly_cache` subdirectory as a fasta file with filename format, `<sample>.fasta`, e.g `ERR1136644.fasta` above, and each contig should be called `>NODE_<n>` where `<n>` is a unique numerical value. For each bin task, each bin should be written to the correct `bintask_dir` subdirectory as a separate fasta file with filename format `bin.<n>.fasta` where `<n>` is a unique numerical value (they don't have to be consecutive). Bam files needed by binning algorithms are put into the assembly cache. For each unique pair of (target_sample, dataset sample) across all the binning mode csvs, a coordinate-sorted bam file `<target>_<dataset_sample>.bam` needs to be added to the correct `assembly_cache` subdirectory. For example `ERR1136644_ERR1136644.bam`, which maps the reads of sample `ERR1136644` to its assembly would be needed for single-sample binning of the sample. 
+
+## Running quality control
+We can now run quality control algorithms on bins to predict their quality with:
+```
+python -m maggie run-quality-control
+``` 
+
+Currently MAG-E supports CheckM2 and GUNC. This follows a similar pattern to the assembly, binner, and refiner API (see Developer Section). Currently, MAG-E does not support non-API quality control.
+
+## MAG-pipeline evaluation
+
+We now have nearly everything we need to evaluate pipelines with MAG-E. One final file set we need to compute is the ground truth assignments of every contigs to every genome. We do this with:
+```
+python -m maggie construct-ground-truth
+```
+This writes `<sample>_gt_table.csv` files to the correct locations in `assembly_cache`. Each file maps the contigs to their genome(s) of origin, providing ground truth for MAG-E evaluation. 
+
+We can now calculate for each MAG-generation task, the ground truth metrics (precision, and recall, and F-score) for each genome. We do this with:
+```
+python -m maggie calc-per-genome-metrics
+``` 
+
+This will generate a number of files, the most important of which are prefixed with `.genome_metrics.parquet` and will be written to the `evaluation` directory. This binary files report the ground truth metrics of each genome from each MAG-generation task. There's one file per (assembler,binner) combination, to avoid the files becoming overly large. 
+
+To get the final MAG-E evaluation, we call:
+```
+python -m maggie evaluate-pipelines
+```
+which first constructs the recoverable genome set (recall >= 0.7, precision >= 0.9 by default), and then builds a linear-mixed model of MAG-pipeline performance using the metrics from the recoverable set. MAG-E reports the estimated marginal means for each pipeline, and various performance comparisons between assemblers, binners and refiners, and binning modes to a set of files in `evaluation/LMM`:
+- `all_pipelines_fscore.csv`: Reports the estimated marginal mean F-score for each MAG-pipeline.
+- `all_pipelines_precision.csv`: Reports the estimated marginal mean (1-precision) for each MAG-pipeline.
+- `all_pipelines_recall.csv`: Reports the estimated marginal mean recall for each MAG-pipeline.
+- `pipeline_categories*.csv`: Report the estimated marginal mean of particular pipeline categories, e.g the mean of all pipelines running `MEGAHIT`. 
+- `all_pairs*.csv`: Statistical difference tests between all pairs of pipelines for each metric. 
+
+Note that tests over categories are currently printed to stdout. 
+With these tables and printed outputs, one can plot and compare the different MAG-pipelines. 
+
+## Contig level evaluations with MAG-E
+
+With MAG-E we can evaluate MAG-pipeline performance on particular classes of contigs. Currently MAG-E only supports this for pipelines run with default assembly and binning command-line options. To evaluate contig classes for each assembly, you must construct a "contig properties" file. These files have the following format:
+```
+sample,contig,prop_d_<x1>,prop_d_<x2>,...
+```
+There must be one row per contig. The two required columns `sample`and `contig` must specify the name of the sample and contig that each row represents. Contig properties must have the name format `prop_d_<xn>` where `<xn>` is the name of the property. For example, it could be `prop_d_prophage` which has two levels, `prophage` and `not_prophage`, which is used to classify each contig as containing a prophage annotation or not. This will allow MAG-E to evaluate the pipeline performance on contigs with a prophage annotation. For example, say `assembly_cache/assembly_task_1/ERR1136644` is the correct directory for running metaSPAdes in default on sample `ERR1136644`. In this directory, we need to add a file with filename format `<sample>_contig_properties.csv`, i.e `ERR1136644_contig_properties.fasta`, which may look like
+```
+sample,contig,prop_d_prophage,prop_d_containsOri,prop_d_NumberOfPolyARepeats
+ERR1136644,NODE_1,no_prophage,no_ori,0
+ERR1136644,NODE_2,no_prophage,no_ori,1
+ERR1136644,NODE_3,prophage,no_ori,2
+ERR1136644,NODE_4,no_prophage,ori,0
+ERR1136644,NODE_5,no_prophage,ori,1
+```
+Which could, for example, check the performance of contigs with prophage annotations, 
+origin of replication annotations, or with different numbers of A-repeats of length > 10, 
+however the user should define it.
 
 ### Project caching
-
-Notice how there was no need to tell MAG-E where the project `myproject` is when it was building the project
-and validating the config? This is because MAG-E holds a project cache located in `./MAG-E/.project_cache.csv`. This project cache stores each MAG-E project, and keeps track of which one is currently being worked on. We can retrieve the current project with
+MAG-E caches projects, allowing the user to work on multiple projects with a streamlined command line, and switch between them. MAG-E does this by caching project names and filesystem locations in `./MAG-E/.project_cache.csv`. One project has a "current" status, which MAG-E will automatically load the configuration of when running commands. We can retrieve the current project with
 ```
 python -m maggie get-current
-myproject       /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/testingmaggie/myproject
+myproject       /absolute/path/to/launch/myproject
 ```
-which prints the current project name and its path. The caches contents looks like:
+which prints the current project name and its path. The cache contents looks like:
 ```
 cat .project_cache.tsv 
 name    directory       is_current
-myproject       /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/testingmaggie/myproject    True
+myproject       /absolute/path/to/launch/myproject    True
 ```
 
 Say we add another project and ask the current:
 ```
-python -m maggie initialize-project /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/testingmaggie anotherproject
+python -m maggie initialize-project /absolute/path/to/launch/ anotherproject
 python -m maggie get-current
-anotherproject  /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/testingmaggie/anotherproject
+anotherproject  /absolute/path/to/launch/anotherproject
 ```
-We can see the the current project has switched to `anotherproject`. Both projects are listed in the cache,
+We see that the current project has switched to `anotherproject`. Both projects are listed in the cache,
 ```
 cat .project_cache.tsv
 name    directory       is_current
-myproject       /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/testingmaggie/myproject    False
-anotherproject  /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/testingmaggie/anotherproject       True
+myproject       /absolute/path/to/launch/myproject    False
+anotherproject  /absolute/path/to/launch/anotherproject       True
 ```
 with is_current set to true for `anotherproject`. 
 
-To reset myproject to be current: 
+To reset `myproject` to be current: 
 ```
 python -m maggie set-current myproject
 python -m maggie get-current
-myproject       /Users/izaak/Library/CloudStorage/Dropbox/Documents/Projects/testingmaggie/myproject
+myproject       /absolute/path/to/launch/myproject
 ```
-
-This caching allows MAG-E to switch between multiple projects whilst simplifying the command-line. 
-
-# Tutorial
-
-First we populate the `config.yaml`.
+## Developer section
+To be added. 
