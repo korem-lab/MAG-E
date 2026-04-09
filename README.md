@@ -188,7 +188,7 @@ bintask_dir/
 
 In order for MAG-E to perform evaluations of the various pipelines, we now need to output the assemblies and bins from each pipeline into the correct directories such that MAG-E can keep track. The `manifest.csv` already tells us which `assembly_cache` and `bintask_dir` subdirectory to place each assembly and binning output from every MAG-generation task for MAG-E to work successfully. There are two ways to use it to construct assemblies and bins. 
 
-The first is to use the MAG-E API, which is used when `use_api` is set to `yes` in the `config.yaml`. By default the API is used. In this case, MAG-E will use the internally supported assemblers, binners, and refiners in order to run the MAG-generation tasks and automatically populate the `assembly_cache` and `bintask_dir` according to the manifest. The major benefit is that this is the most "hands-off" way to construct assemblies, bins, and correctly populate the directories. The downside is that, currently, each MAG-generation task is run sequentially, and so depending on your compute infrastructure this can be slow if you have many tasks. The supported algorithms can be found in the repo subdirectory `./maggie/tasks`, and are simple python class interfaces that wrap each algorithm, run it on the command-line, and format the outputs to work with the downstream part of MAG-E. These were built with the idea that it would be straightforward expand the automated part of assembly and bin construction with ease (see Developer Section to understand the interface and how to extend). 
+The first is to use the MAG-E API, which is used when `use_api` is set to `yes` in the `config.yaml`. By default the API is used. In this case, MAG-E will use the internally supported assemblers, binners, and refiners in order to run the MAG-generation tasks and automatically populate the `assembly_cache` and `bintask_dir` according to the manifest. The major benefit is that this is the most "hands-off" way to construct assemblies, bins, and correctly populate the directories. The downside is that, currently, each MAG-generation task is run sequentially, and so depending on your compute infrastructure this can be slow if you have many tasks. The supported algorithms can be found in the repo subdirectory `./maggie/tasks`, and are simple python class interfaces that wrap each algorithm, run it on the command-line, and format the outputs to work with the downstream part of MAG-E. These were built with the idea that it would be straightforward expand the automated part of assembly and bin construction with ease. 
 
 Using the API is straightforward. To run the assembly tasks:
 ```
@@ -236,7 +236,7 @@ We can now run quality control algorithms on bins to predict their quality with:
 python -m maggie run-quality-control
 ``` 
 
-Currently MAG-E supports CheckM2 and GUNC. This follows a similar pattern to the assembly, binner, and refiner API (see Developer Section). Currently, MAG-E does not support non-API quality control.
+Currently MAG-E supports CheckM2 and GUNC. This follows a similar pattern to the assembly, binner, and refiner API. Currently, MAG-E does not support non-API quality control.
 
 ## MAG-pipeline evaluation
 
@@ -320,5 +320,3 @@ python -m maggie set-current myproject
 python -m maggie get-current
 myproject       /absolute/path/to/launch/myproject
 ```
-## Developer section
-To be added. 
