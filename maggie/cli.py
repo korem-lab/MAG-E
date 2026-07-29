@@ -136,17 +136,23 @@ def construct_tasks(
 
 @app.command()
 def query(
-    request: str = typer.Argument(..., help='assembly bin simulations genomes mode'),
-    sample: str = typer.Option(None, help='Target sample.'),
-    assembler: str = typer.Option(None, help='Name of assembler.'),
-    assembler_option: str = typer.Option('default', help='Option string for assembler'),
-    binner: str = typer.Option(None, help='Name of binner.'),
-    binner_option: str = typer.Option('default', help='Option string for assembler'),
-    refiner: str = typer.Option(None, help='Name of refiner.'),
-    refiner_option: str = typer.Option('default', help='Option string for assembler'),
-    binning_mode: str = typer.Option(None, help='Binning mode'),
-    pipelines: str = typer.Option(None, help='String specifying the refiner pipelines.'),
-    item: str = typer.Option(None, help='List samples, assemblers, binners, mappers, quality control tools.')
+    type: str = typer.Argument(..., help='Either dir or list'),
+    target: str = typer.Option(None, help='Target sample.'),
+    assembler: str = typer.Option(None, help='An assembler in config.'),
+    assembler_option: str = typer.Option('default', help='CLI option string.'),
+    binner: str = typer.Option(None, help='A binner in config.'),
+    binner_option: str = typer.Option('default', help='CLI option string.'),
+    binning_mode: str = typer.Option(None, help='Binning mode in config'),
+    mapper: str = typer.Option(None, help='A mapper in config.'),
+    mapper_option: str = typer.Option('default', help='CLI option string'),
+    refiner: str = typer.Option(None, help='A refiner in.'),
+    refiner_option: str = typer.Option('default', help='CLI option string'),
+    refiner_pipelines: str = typer.Option(None, help='String specifying the refiner pipelines.'),
+    simulations: bool = typer.Option(False, help='Return directory of simulated metagenomes.'),
+    genomes: bool = typer.Option(False, help='Return the directory of db genomes.'),
+    evaluations: bool = typer.Option(False, help='Return the directory of pipeline evaluations.'),
+    of: str = typer.Option(None, help='Provide the list of...'),
+    within: str = typer.Option(None, help='CLI options within a tool or samples within a mode.')
 ):
     """
     Prints either the assembly task directory or the bin task directory 
@@ -154,7 +160,10 @@ def query(
     """
     _, directory = get_current_project()
     project = Project.load(directory)
-    project.query(request, sample, assembler, assembler_option, binner, binner_option, refiner, refiner_option, binning_mode, pipelines, item)
+    project.query(
+        type, target, assembler, assembler_option, binner, binner_option, binning_mode, mapper, mapper_option, refiner, refiner_option, refiner_pipelines, simulations, genomes, evaluations,
+        of, within
+    )
     
 
 @app.command()

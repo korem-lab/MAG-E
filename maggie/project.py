@@ -14,7 +14,7 @@ from . import simulation as sm
 from . import evaluation as ev
 from .tasks import assembly as ab, binning as bn, quality_control as qc, task_utils as tu
 from . import ground_truth as gt 
-from .utils import parse_manifest, run_R_script, parse_contig_properties
+from .utils import parse_manifest, run_R_script, parse_contig_properties, print_and_return
 from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
 
 
@@ -141,14 +141,78 @@ class Project:
             manifest.to_csv(join(self.config.project_base, 'manifest.csv'), index=None)
         return manifest
     
-    def query(self, request, sample, assembler, assembler_options, binner, binner_options, refiner, refiner_options, binning_mode, pipelines, item):
+    def query(self, 
+            type, target, assembler, aopt, binner, bopt, 
+            binning_mode, mapper, mopt, refiner, ropt, rpipe, simulations,
+            genomes, evaluations, of, within
+        ):
         """
         Queries the maggie project for information
         """
         manifest = parse_manifest(self.config.manifest)
-        assert request in ['assembly', 'bin', 'map', 'simulations', 'genomes', 'mode', 'list','list-options'], Exception(f'{request} not a valid query.')
+        assert type in ['dir', 'list'], Exception('Only "dir" and "list" are valid queries.')
 
-        if request == 'assembly':
+        if type == 'dir':
+            if simulations:
+                return print_and_return(self.config.simulation_dir)
+            if genomes:
+                return print_and_return(self.config.genomes_dir)
+            if evaluations:
+                return print_and_return(self.config.evaluation_dir)
+            if assembler and mapper and binner and binning_mode and target:
+                assert (binner and not refiner) or (refiner and not binner), Exception('Pick binner xor refiner.')
+                tsks = manifest.loc[
+                    (manifest['target_sample'] == target) & 
+                    (manifest['assembler'] == assembler) & (manifest['assembler_options'] == aopt) &
+                    (manifest['mapper'] == mapper) & (manifest['mapper_options'] == mopt) &
+                    (manifest['binner'] == binner) & (manifest['binner_options'] == bopt) & 
+                    (manifest['binning_mode'] == binning_mode) 
+                ][['task_out_dir']].drop_duplicates()
+            elif assembler and mapper and refiner and binning_mode and target:
+                assert (binner and not refiner) or (refiner and not binner), Exception('Pick binner xor refiner.')
+                rpipe = tuple(tuple(e.split(',')) for e in rpipe.split(':'))
+                tsks = manifest.loc[
+                    (manifest['target_sample'] == target) & 
+                    (manifest['refiner'] == refiner) & (manifest['refiner_options'] == ropt) & 
+                    (manifest['pipelines'] == rpipe)
+                ][['task_out_dir']].drop_duplicates()
+            elif assembler and mapper and target:
+                tsks = manifest.loc[
+                    (manifest['target_sample'] == target) & 
+                    (manifest['assembler'] == assembler) & (manifest['assembler_options'] == aopt) &
+                    (manifest['mapper'] == mapper) & (manifest['mapper_options'] == mopt)
+                ][['map_dir']].drop_duplicates()
+            elif assembler and target:
+                tsks = manifest.loc[
+                    (manifest['target_sample'] == target) & 
+                    (manifest['assembler'] == assembler) & (manifest['assembler_options'] == aopt)
+                ][['asm_dir']].drop_duplicates()
+            else:
+                Exception("Invalid query.")
+            if tsks.empty:
+                raise Exception("No tasks fit the query.")
+            elif len(tsks) > 1:
+                raise Exception("More than task fits the query") 
+            else:
+                return print_and_return(tsks.iloc[0,0])
+        elif type == 'list':
+            assert of, Exception("--of must be specified if the query is a list.")
+            assert of in ['binners', 'assemblers', 'mappers', 'modes', 'qctools', 'targets', 'options', 'samples'], Exception('Invalid --of argument.')
+            if of in ['options', 'samples']:
+                assert within, Exception("Asking for a list of options or samples requires within to be specified.")
+            if of not in ['options', 'samples']:
+                return print_and_return(self.config.get_list_of(of))
+            elif of == 'options':
+                return print_and_return(self.config.get_options_within(within))
+            elif of == 'samples' and target:
+                return print_and_return(self.config.get_samples_within_mode(within, target))
+            else:
+                raise Exception('Invalid list query.')
+        else:
+            raise Exception('Only "dir" and "list" are valid queries.')
+
+
+        if request== 'assembly':
             assert (manifest.assembler == assembler).any(), Exception(f'Assembler {assembler} not specified in config.')
             assert (manifest.target_sample == sample).any(), Exception(f'Sample {sample} not in target samples')
             assert (manifest.assembler_options == assembler_options).any(), Exception(f'Assembler options {assembler_options} not specified in config.')

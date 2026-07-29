@@ -9,7 +9,9 @@ import shutil
 import sys
 from subprocess import run
 
-
+def print_and_return(s):
+    print(s,flush=True,end='')
+    return s
 def run_R_script(script, *args):
     dir = Path(__file__).parent
     cmd = f'Rscript {dir}/R/{script}.R {" ".join(args)}'

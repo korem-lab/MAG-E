@@ -1,9 +1,11 @@
 import os
+import glob
 from os.path import join, exists
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict
 from pathlib import Path
 import yaml
+import pandas as pd
 from .utils import tupleize
 from .tasks import quality_control, assembly, binning
 
@@ -85,6 +87,44 @@ class Config:
         self.refiners = [tupleize(e) for e in self.refiners]
         self.mappers = [tupleize(e) for e in self.mappers]
 
+    def get_list_of(self, k):
+        ret = ''
+        if k == 'targets':
+            targets = [os.path.basename(e) for e in glob.glob(f'{self.simulation_dir}/*.fastq.gz')]
+            targets = [e.split(f'_{self.prefix1}')[0] for e in targets if f'_{self.prefix1}' in e]
+            ret = ' '.join(targets)
+        elif k == 'assemblers':
+            ret = ' '.join(set(a for a,p in self.assemblers))
+        elif k == 'binners':
+            ret = ' '.join(set(b for b,p in self.binners))
+        elif k == 'modes':
+            ret = ' '.join(set(self.binning_modes))
+        elif k == 'mappers':
+            ret = ' '.join(set(m for m,p in self.mappers))
+        else:
+            Exception('--of is invalid.')
+        return ret
+
+    def get_options_within(self, tool):
+        ret = ''
+        if tool in [a for a, p in self.assemblers]:
+            ret = '\0'.join(p for a, p in self.assemblers if a == tool)
+        elif tool in [a for a, p in self.binners]:
+            ret = '\0'.join(p for a, p in self.binners if a == tool)
+        elif tool in [a for a, p in self.mappers]:
+            ret = '\0'.join(p for a, p in self.mappers if a == tool)
+        elif tool in [a for a, p in self.qctools]:
+            ret = '\0'.join(p for a, p in self.qctools if a == tool)
+        elif tool in [a for a, p in self.refiners]:
+            ret = '\0'.join(p for a, p in self.refiners if a == tool)
+        else:
+            Exception(f'{tool} is invalid.')
+        return ret
+
+    def get_samples_within_mode(self, mode, target):
+        assert mode in self.binning_modes, Exception("Supplied binning mode is invalid.")
+        df = pd.read_csv(os.path.join(self.project_base, f'{mode}_datasets.csv'))
+        return ' '.join(df.loc[df.target_sample == target].dataset.values)
 
     @property
     def maggie_db_dir(self):
