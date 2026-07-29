@@ -135,9 +135,9 @@ def construct_tasks(
     project.construct_tasks(write_to_disk=True)
 
 @app.command()
-def get_task_dir(
-    request: str = typer.Argument(..., help='Either "assembly_task" or "bin_task"'),
-    sample: str = typer.Argument(...,help='Target sample.'),
+def query(
+    request: str = typer.Argument(..., help='assembly bin simulations genomes mode'),
+    sample: str = typer.Option(None, help='Target sample.'),
     assembler: str = typer.Option(None, help='Name of assembler.'),
     assembler_option: str = typer.Option('default', help='Option string for assembler'),
     binner: str = typer.Option(None, help='Name of binner.'),
@@ -145,7 +145,8 @@ def get_task_dir(
     refiner: str = typer.Option(None, help='Name of refiner.'),
     refiner_option: str = typer.Option('default', help='Option string for assembler'),
     binning_mode: str = typer.Option(None, help='Binning mode'),
-    pipelines: str = typer.Option(None, help='String specifying the refiner pipelines.')
+    pipelines: str = typer.Option(None, help='String specifying the refiner pipelines.'),
+    item: str = typer.Option(None, help='List samples, assemblers, binners, mappers, quality control tools.')
 ):
     """
     Prints either the assembly task directory or the bin task directory 
@@ -153,7 +154,7 @@ def get_task_dir(
     """
     _, directory = get_current_project()
     project = Project.load(directory)
-    project.get_task_dir(request, sample, assembler, assembler_option, binner, binner_option, refiner, refiner_option, binning_mode, pipelines)
+    project.query(request, sample, assembler, assembler_option, binner, binner_option, refiner, refiner_option, binning_mode, pipelines, item)
     
 
 @app.command()
