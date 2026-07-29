@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import sys
 from os.path import join, exists
 import glob
 import numpy as np
@@ -124,8 +125,9 @@ class Project:
 
         # make the manifest
         manifest = tu.make_manifest(
-            self.config.assemblers, self.config.binners, self.config.binning_modes, self.config.refiners, self.config.qctools,
-            self.config.simulation_dir, self.config.assembly_cache, self.config.bintask_dir, self.config.project_base
+            self.config.assemblers, self.config.mappers, self.config.binners, self.config.binning_modes, self.config.refiners, self.config.qctools,
+            self.config.simulation_dir, self.config.assembly_cache, self.config.mapping_cache,
+            self.config.bintask_dir, self.config.project_base
         )
 
         # make the core directories for MAG generation. 
@@ -133,28 +135,28 @@ class Project:
         os.makedirs(self.config.bintask_dir, exist_ok=True)
         manifest.asm_dir.apply(lambda x: os.makedirs(x, exist_ok=True) if not pd.isna(x) else None)
         manifest.task_out_dir.apply(lambda x: os.makedirs(x, exist_ok=True))
+        manifest.map_dir.apply(lambda x: os.makedirs(x,exist_ok=True) if not pd.isna(x) else None)
 
         if write_to_disk:
             manifest.to_csv(join(self.config.project_base, 'manifest.csv'), index=None)
         return manifest
     
-    def get_task_dir(self, request, sample, assembler, assembler_options, binner, binner_options, refiner, refiner_options, binning_mode, pipelines):
+    def query(self, request, sample, assembler, assembler_options, binner, binner_options, refiner, refiner_options, binning_mode, pipelines, item):
         """
-        Prints the assembly or bin task director for a task given the options. 
+        Queries the maggie project for information
         """
-
         manifest = parse_manifest(self.config.manifest)
-        assert request in ['assembly', 'bin'], Exception(f'Request must be either "assembly" or "bin", not {request}.')
-        assert (manifest.target_sample == sample).any(), Exception(f'Sample {sample} not in target samples')
-
+        assert request in ['assembly', 'bin', 'map', 'simulations', 'genomes', 'mode', 'list','list-options'], Exception(f'{request} not a valid query.')
 
         if request == 'assembly':
             assert (manifest.assembler == assembler).any(), Exception(f'Assembler {assembler} not specified in config.')
+            assert (manifest.target_sample == sample).any(), Exception(f'Sample {sample} not in target samples')
             assert (manifest.assembler_options == assembler_options).any(), Exception(f'Assembler options {assembler_options} not specified in config.')
             tsks = manifest.loc[
                 (manifest['target_sample'] == sample) & (manifest['assembler'] == assembler) & (manifest['assembler_options'] == assembler_options)
             ][['asm_dir']].drop_duplicates()
-        else:
+        elif request == 'bin' or request == 'refiner':
+            assert (manifest.target_sample == sample).any(), Exception(f'Sample {sample} not in target samples')
             assert ((assembler and binner and binning_mode) or (refiner and pipelines)), Exception('Must specify an assembler, binner and binning_mode, or a refiner with pipelines')
             if binner and refiner is None:
                 assert (manifest.assembler ==assembler).any(), Exception(f'Assembler {assembler} not specified in config.')
@@ -177,8 +179,43 @@ class Project:
                     (manifest['target_sample'] == sample) & (manifest['refiner'] == refiner) & 
                     (manifest['refiner_options'] == refiner_options) & (manifest['pipelines'] == pipelines)
                 ][['task_out_dir']]
-            else:
-                raise Exception("Invalid combination.")
+        elif request == 'map':
+            raise Exception("Not implemented.")
+        elif request == 'mode':
+            raise Exception("Not implemented.")
+        elif request == 'simulations':
+            print(self.config.simulation_dir, flush=True, end='')
+            return self.config.simulation_dir
+        elif request == 'mode':
+            raise Exception("Not implemented.")
+        elif request == 'list':
+            ret = ''
+            if item == 'samples':
+                samples = [os.path.basename(e) for e in glob.glob(f'{self.config.samples_dir}/*.gz')]
+                samples = [e.split(f'_{self.config.prefix1}')[0] for e in samples if f'_{self.config.prefix1}' in e]
+                ret = ' '.join(samples)
+            elif item == 'assemblers':
+                ret = ' '.join(set(a for a,p in self.config.assemblers))
+            elif item == 'binners':
+                ret = ' '.join(set(b for b,p in self.config.binners))
+            elif item == 'modes':
+                ret = ' '.join(set(self.config.binning_modes))
+            elif item == 'mappers':
+                ret = ' '.join(set(m for m,p in self.config.mappers))
+            print(ret, flush=True, end='')
+            return ret
+
+        elif request == 'list-options':
+            ret = ''
+            if item in [a for a, p in self.config.assemblers]:
+                ret = '\0'.join(p for a, p in self.config.assemblers if a == item)
+            if item in [a for a, p in self.config.binners]:
+                ret = '\0'.join(p for a, p in self.config.binners if a == item)
+            if item in [a for a, p in self.config.mappers]:
+                ret = '\0'.join(p for a, p in self.config.mappers if a == item)
+            sys.stdout.write(ret)
+            sys.stdout.flush()
+            return None
 
         if tsks.empty:
             raise Exception("Invalid combination. There are no tasks.")
