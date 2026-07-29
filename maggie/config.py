@@ -1,6 +1,7 @@
 import os
 from os.path import join, exists
 from dataclasses import dataclass, field, asdict
+from collections import defaultdict
 from pathlib import Path
 import yaml
 from .utils import tupleize
@@ -10,6 +11,13 @@ from .tasks import quality_control, assembly, binning
 def represent_list(dumper, data):
     return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
 yaml.add_representer(list, represent_list)
+
+def make_dict(data):
+    data=tupleize(data)
+    ret=defaultdict(set)
+    for t,p in data:
+        ret[t].add(p)
+    return ret
 
 @dataclass
 class Config:
@@ -24,6 +32,7 @@ class Config:
     prefix1: str  = 'NULL'
     assemblers: list = field(default_factory=lambda: [['ASM', 'OPT'], ['ASM', 'OPT']])
     binners: list = field(default_factory=lambda: [['BIN', 'OPT'], ['BIN', 'OPT']])
+    mappers: list = field(default_factory=lambda: [['BIN', 'OPT'], ['BIN', 'OPT']])
     binning_modes: list =  field(default_factory=lambda: ['MODE', 'MODE'])
     refiners: list = field(default_factory=lambda: 
         [
@@ -70,10 +79,12 @@ class Config:
         # Make sure the quality control API is implemented 
         for q in self.qctools:
             assert hasattr(quality_control, q+'QCTool')
-        
+
         self.assemblers = [tupleize(e) for e in self.assemblers]
         self.binners = [tupleize(e) for e in self.binners]
         self.refiners = [tupleize(e) for e in self.refiners]
+        self.mappers = [tupleize(e) for e in self.mappers]
+
 
     @property
     def maggie_db_dir(self):
@@ -98,6 +109,10 @@ class Config:
     @property
     def assembly_cache(self):
         return join(self.project_base, 'assembly_cache')
+
+    @property
+    def mapping_cache(self):
+        return join(self.project_base, 'mapping_cache')
 
     @property
     def bintask_dir(self):
