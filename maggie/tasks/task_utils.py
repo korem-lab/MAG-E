@@ -10,25 +10,20 @@ from ..utils import parse_binning_mode_datasets, write_done_flag, rm_dir, get_co
 from . import assembly as ab, binning as bn, quality_control as qc
 
 
-def get_summary_names(data, dtype):
-    assert dtype in ['refiner', 'bn', 'ab']
-    if dtype == 'refiner':
+def get_summary_names(data, is_refiner=False):
+    if is_refiner:
         summary_names = pd.DataFrame(
-            {'refiner':refiner, 'ro':ro, 'pipelines':pipelines} for refiner, ro, pipelines in data
+            {'tool':refiner, 'toolopt':ro, 'pipelines':pipelines} for refiner, ro, pipelines in data
         )
-    elif dtype == 'bn':
-        summary_names = pd.DataFrame({'bn': bn, 'bno':bno} for (bn, bno) in data)
     else:
-        summary_names = pd.DataFrame({'ab': ab, 'abo':abo} for (ab, abo) in data)
-
-    
-    summary_names['sname'] = summary_names.groupby(dtype).cumcount().add(1).astype(str)
+        summary_names = pd.DataFrame({'tool':t, 'toolopt':to} for (t,to) in data)
+    summary_names['sname'] = summary_names.groupby('tool').cumcount().add(1).astype(str)
     summary_names['sname'] = summary_names['sname'].apply(lambda x: f'({x})')
-    mask = summary_names.groupby(dtype)[dtype].transform('count') == 1
+    mask = summary_names.groupby('tool')['tool'].transform('count') == 1
     summary_names.loc[mask, 'sname'] = ''
     return summary_names
 
-def make_key_map():
+def id_gen():
     counter = 1
     def new_id():
         nonlocal counter
@@ -38,43 +33,46 @@ def make_key_map():
     return defaultdict(new_id)
 
 def make_manifest(
-    assemblers, binners, modes, refiners, qctools, simulation_dir, 
-    assembly_cache, bintask_dir, project_base
+    assemblers, mappers, binners, modes, refiners, qctools, simulation_dir, 
+    assembly_cache, mapping_cache, bintask_dir, project_base
 ):
     # Assert their unique
     def chck(x):
-        assert len(x) == len(set(x)), Exception("List myst be unique")
+        assert len(x) == len(set(x)), Exception("List must be unique")
     chck(assemblers)
     chck(binners)
     chck(modes)
     chck(refiners)
+    chck(mappers)
 
     # There may be multiple assembler, binner, and refiners run with different options
     # to give these a simple name, which can later be looked up, we construct tables
     # that map each option to an integer "summary name"
-    rsmry = get_summary_names(refiners, 'refiner')
-    bsmry = get_summary_names(binners, 'bn')
-    asmry = get_summary_names(assemblers, 'ab')
-
-    bintask_counter = make_key_map()
-    assembly_counter = make_key_map()
+    rsmry = get_summary_names(refiners, is_refiner=True) 
+    bsmry = get_summary_names(binners)
+    asmry = get_summary_names(assemblers)
+    msmry = get_summary_names(mappers)
+    bintask_counter = id_gen()
+    assembly_counter = id_gen()
+    mapper_counter = id_gen()
     tasks = list()
-    for (ab, abo), (bn, bno), mode in product(assemblers, binners, modes):
+    for (ab, abo), (mp, mpo), (bn, bno), mode in product(assemblers, mappers, binners, modes):
 
-        # abo and bno are respectively the assembly options and binning options. 
-        # For each option copbination, we make a separate directory
         asm_num = assembly_counter[(ab, abo)]
-        bin_task_num = bintask_counter[(ab, abo, bn, bno, mode)]
+        map_num = mapper_counter[(ab, abo, mp, mpo)]
+        bin_task_num = bintask_counter[(ab, abo, mp, mpo, bn, bno, mode)]
         spec = {
             'simulation_dir': simulation_dir,
             'assembler': ab, 'assembler_options': abo, 'binner': bn, 'binner_options': bno,
+            'mapper': mp, 'mapper_options': mpo,
             'binning_mode': mode, 'qctools': qctools,
             'is_refiner': False
         }
 
         # get the summary names for the binning runs
-        spec['assembler_summary_name'] = asmry[(asmry.ab == ab) & (asmry.abo == abo)].sname.item()
-        spec['binner_summary_name'] = bsmry[(bsmry.bn == bn) & (bsmry.bno == bno)].sname.item()
+        spec['assembler_summary_name'] = asmry[(asmry.tool == ab) & (asmry.toolopt == abo)].sname.item()
+        spec['binner_summary_name'] = bsmry[(bsmry.tool == bn) & (bsmry.toolopt == bno)].sname.item()
+        spec['mapping_summary_name'] = msmry[(msmry.tool == mp) & (msmry.toolopt == mpo)].sname.item()
 
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
@@ -82,6 +80,7 @@ def make_manifest(
             spec['samples'] = [trgt] + sorted(list(set(df.dataset.to_list()) - {trgt}))
             spec['task_out_dir'] = join(bintask_dir, f'bin_task_{bin_task_num}', trgt)
             spec['asm_dir'] = join(assembly_cache, f'assembly_task_{asm_num}', trgt)
+            spec['map_dir'] = join(mapping_cache, f'mapping_task_{map_num}', trgt)
             tasks.append(spec.copy())
 
 
@@ -93,7 +92,7 @@ def make_manifest(
             'refiner': refiner, 'refiner_options': ro, 'pipelines': pipelines,
             'assembler': pipelines[0][0], 'assembler_options':pipelines[0][1]
         }
-        spec['refiner_summary_name'] = rsmry.loc[(rsmry.refiner == refiner) & (rsmry.ro == ro) & (rsmry.pipelines == pipelines)].sname.item()
+        spec['refiner_summary_name'] = rsmry.loc[(rsmry.tool == refiner) & (rsmry.toolopt == ro) & (rsmry.pipelines == pipelines)].sname.item()
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt
