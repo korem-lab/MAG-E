@@ -1,0 +1,44 @@
+name: maggie
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - bioconda::blast
+  - bioconda::bowtie2
+  - bioconda::das_tool
+  - bioconda::drep
+  - bioconda::gunc
+  - bioconda::megahit
+  - bioconda::metabat2
+  - pandas==2.3.3
+  - conda-forge::pyarrow
+  - python
+  - conda-forge::pyyaml
+  - conda-forge::r-emmeans
+  - conda-forge::r-lme4
+  - conda-forge::r-lmertest
+  - conda-forge::r-pbkrtest
+  - conda-forge::r-tidyverse
+  - bioconda::samtools
+  - conda-forge::seaborn
+  - bioconda::spades
+  - bioconda::sylph
+  - conda-forge::typer
+  - pip:
+    - InSilicoSeq==2.0.1
+    - Brotli==1.2.0
+    - drep==3.4.5
+    - gunc==1.1.0
+    - h2==4.3.0
+    - InSilicoSeq==2.0.1
+    - munkres==1.1.4
+    - nlopt==2.10.1
+    - pip==26.0.1
+    - pyarrow==23.0.1
+    - PySocks==1.7.1
+    - PyYAML==6.0.3
+    - setuptools==82.0.1
+    - statsmodels==0.14.6
+    - typer==0.24.1
+    - typing_extensions==4.15.0
+    - unicodedata2==17.0.1

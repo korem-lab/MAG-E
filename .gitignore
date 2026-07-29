@@ -1,0 +1,4 @@
+*.pyc
+launch.json
+settings.json
+.project_cache.tsv
