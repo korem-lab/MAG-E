@@ -14,7 +14,7 @@ from . import simulation as sm
 from . import evaluation as ev
 from .tasks import assembly as ab, binning as bn, quality_control as qc, task_utils as tu
 from . import ground_truth as gt 
-from .utils import parse_manifest, run_R_script, parse_contig_properties, print_and_return
+from .utils import parse_manifest, run_R_script, parse_contig_properties, print_and_return, soft_link
 from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
 
 
@@ -46,13 +46,18 @@ class Project:
 
     def build_core_directories(self):
         # Verify the configuration 
-        os.makedirs(self.config.maggie_db_dir, exist_ok=True)
-        os.makedirs(self.config.simulation_dir, exist_ok=True)
+        if self.config.simulate == 'yes':
+            os.makedirs(self.config.ecosystem_db, exist_ok=True)
+        else:
+            # Soft link the reads
+            fqs = glob.glob(join(self.config.samples_dir, '*.fastq.gz'))
+            for srcfq in fqs:
+                dstfq = join(self.config.simulation_dir, os.path.basename(srcfq))
+                soft_link(srcfq, dstfq)
         os.makedirs(self.config.simulation_dir, exist_ok=True)
         os.makedirs(self.config.bintask_dir, exist_ok=True)
         os.makedirs(self.config.evaluation_dir, exist_ok=True)
 
-    
     def make_database(self, threads=8, ani=0.98, c=200, write_to_disk=False):
         """
         Makes the MAG-E database from the input genomes. 
@@ -61,10 +66,10 @@ class Project:
         genome matches are used to construct the mirror specification of the sample.
         """
         # make the directory housing the MAG-E database
-        os.makedirs(self.config.maggie_db_dir, exist_ok=True)
+        os.makedirs(self.config.ecosystem_db, exist_ok=True)
 
         # the database table will be built up from the user-specified cluster assignments
-        db_table = pd.read_csv(self.config.cluster_assignments)
+        db_table = pd.read_csv(self.config.ecosystem_db_metadata)
         db.check_genome_files_exist(db_table.genome, self.config.genomes_dir)
 
         # Cluster the genomes at the strain level
@@ -75,14 +80,14 @@ class Project:
 
         # build syldb of species representatives
         reprs = db_table.FileLocation[db_table.isSpeciesRepr]
-        db.construct_sylphdb(reprs, self.config.maggie_db_dir, db_prefix='repr', t=threads, c=c, force=True)
+        db.construct_sylphdb(reprs, self.config.ecosystem_db, db_prefix='repr', t=threads, c=c, force=False)
 
         # build sylphdb of all genomes
         all_genomes = db_table.FileLocation
-        db.construct_sylphdb(all_genomes, self.config.maggie_db_dir, db_prefix='all', t=threads, c=c, force=True)
+        db.construct_sylphdb(all_genomes, self.config.ecosystem_db, db_prefix='all', t=threads, c=c, force=False)
 
         if write_to_disk:
-            db_table.to_csv(self.config.maggie_db_md, index=None)
+            db_table.to_csv(self.config.ecosystem_db_metadata, index=None)
         return db_table
     
     def make_mirrors(self, threads, c, seed):
@@ -94,16 +99,16 @@ class Project:
         ms.construct_sylphsp(self.config.samples_dir, self.config.sylsp_dir, self.config.prefix1, t=threads,c=c)
 
         ## Sylph query and profile each sample.
-        ms.sylph_profile(self.config.sylsp_dir, self.config.maggie_db_dir, self.config.simulation_dir, 'repr', t=threads)
-        ms.sylph_query(self.config.sylsp_dir, self.config.maggie_db_dir, self.config.simulation_dir, 'all', t=threads)
+        ms.sylph_profile(self.config.sylsp_dir, self.config.ecosystem_db, self.config.simulation_dir, 'repr', t=threads)
+        ms.sylph_query(self.config.sylsp_dir, self.config.ecosystem_db, self.config.simulation_dir, 'all', t=threads)
 
         # Collect the Sylph results, and construct the mirror specifications.
         profiles = sorted(glob.glob(join(self.config.simulation_dir, '*_sylph_profile.tsv')))
         queries = sorted(glob.glob(join(self.config.simulation_dir, '*_sylph_query.tsv')))
         for profile, query in zip(profiles, queries):
-            ms.construct_metagenomic_specification(self.config.simulation_dir, self.config.maggie_db_md, profile, query, seed)
+            ms.construct_metagenomic_specification(self.config.simulation_dir, self.config.ecosystem_db_metadata, profile, query, seed)
 
-    def simulate_mgx(self, threads, n_reads, seed):
+    def simulate_mgx(self, threads, n_reads, seed, print_script=False):
         """
         Simulated metagenomic data. 
         """
@@ -111,8 +116,10 @@ class Project:
         for spec in specs:
             sm.run_InSilicoSeq(
                 spec, self.config.simulation_dir, self.config.read_counts, 
-                n_reads, threads, seed=seed, force=False
+                n_reads, threads, seed=seed, force=False, print_script=print_script
             )
+        if print_script:
+            return 
         # Final iss cleanup
         fls = glob.glob(f'{self.config.simulation_dir}*iss.tmp*')
         for fl in fls:
@@ -140,7 +147,40 @@ class Project:
         if write_to_disk:
             manifest.to_csv(join(self.config.project_base, 'manifest.csv'), index=None)
         return manifest
-    
+
+    def get_tasks(
+            self, manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
+        ):
+        flt = lambda x,y: manifest[x] == y if y is not None else pd.Series(True, index=manifest.index)
+        rpipe = tuple(tuple(e.split(',')) for e in rpipe.split(':'))
+        return manifest.loc[
+            flt('target_sample', target) & flt('assembler', assembler) & flt('assembler_options', aopt) &
+            flt('mapper', mapper) & flt('mapper_options', mopt) & flt('binner', binner) & 
+            flt('binner_options', bopt) & flt('binning_mode', binning_mode) &
+            flt('refiner', refiner) & flt('refiner_opt', ropt) & flt('pipelines', rpipe)
+        ]
+
+    def get_task_directory(
+            self, manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
+        ):
+        tsks = self.get_tasks(
+            manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
+        )
+        if assembler and mapper and binner and binning_mode and target:
+            assert (binner and not refiner) or (refiner and not binner), Exception('Pick binner xor refiner.')
+            tsks[['task_out_dir']].drop_duplicates()
+        elif assembler and mapper and target:
+            tsks[['map_dir']].drop_duplicates()
+        elif assembler and target:
+            tsks[['asm_dir']].drop_duplicates()
+        else:
+            Exception("Invalid query.")
+        if tsks.empty:
+            raise Exception("No tasks fit the query.")
+        elif len(tsks) > 1:
+            raise Exception("More than task fits the query") 
+        return tsks.iloc[0,0]
+
     def query(self, 
             type, target, assembler, aopt, binner, bopt, 
             binning_mode, mapper, mopt, refiner, ropt, rpipe, simulations,
@@ -159,42 +199,10 @@ class Project:
                 return print_and_return(self.config.genomes_dir)
             if evaluations:
                 return print_and_return(self.config.evaluation_dir)
-            if assembler and mapper and binner and binning_mode and target:
-                assert (binner and not refiner) or (refiner and not binner), Exception('Pick binner xor refiner.')
-                tsks = manifest.loc[
-                    (manifest['target_sample'] == target) & 
-                    (manifest['assembler'] == assembler) & (manifest['assembler_options'] == aopt) &
-                    (manifest['mapper'] == mapper) & (manifest['mapper_options'] == mopt) &
-                    (manifest['binner'] == binner) & (manifest['binner_options'] == bopt) & 
-                    (manifest['binning_mode'] == binning_mode) 
-                ][['task_out_dir']].drop_duplicates()
-            elif assembler and mapper and refiner and binning_mode and target:
-                assert (binner and not refiner) or (refiner and not binner), Exception('Pick binner xor refiner.')
-                rpipe = tuple(tuple(e.split(',')) for e in rpipe.split(':'))
-                tsks = manifest.loc[
-                    (manifest['target_sample'] == target) & 
-                    (manifest['refiner'] == refiner) & (manifest['refiner_options'] == ropt) & 
-                    (manifest['pipelines'] == rpipe)
-                ][['task_out_dir']].drop_duplicates()
-            elif assembler and mapper and target:
-                tsks = manifest.loc[
-                    (manifest['target_sample'] == target) & 
-                    (manifest['assembler'] == assembler) & (manifest['assembler_options'] == aopt) &
-                    (manifest['mapper'] == mapper) & (manifest['mapper_options'] == mopt)
-                ][['map_dir']].drop_duplicates()
-            elif assembler and target:
-                tsks = manifest.loc[
-                    (manifest['target_sample'] == target) & 
-                    (manifest['assembler'] == assembler) & (manifest['assembler_options'] == aopt)
-                ][['asm_dir']].drop_duplicates()
-            else:
-                Exception("Invalid query.")
-            if tsks.empty:
-                raise Exception("No tasks fit the query.")
-            elif len(tsks) > 1:
-                raise Exception("More than task fits the query") 
-            else:
-                return print_and_return(tsks.iloc[0,0])
+            task_dir = self.get_task_directory(
+                manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
+            )
+            return print_and_return(task_dir)
         elif type == 'list':
             assert of, Exception("--of must be specified if the query is a list.")
             assert of in ['binners', 'assemblers', 'mappers', 'modes', 'qctools', 'targets', 'options', 'samples'], Exception('Invalid --of argument.')
@@ -211,83 +219,28 @@ class Project:
         else:
             raise Exception('Only "dir" and "list" are valid queries.')
 
-
-        if request== 'assembly':
-            assert (manifest.assembler == assembler).any(), Exception(f'Assembler {assembler} not specified in config.')
-            assert (manifest.target_sample == sample).any(), Exception(f'Sample {sample} not in target samples')
-            assert (manifest.assembler_options == assembler_options).any(), Exception(f'Assembler options {assembler_options} not specified in config.')
-            tsks = manifest.loc[
-                (manifest['target_sample'] == sample) & (manifest['assembler'] == assembler) & (manifest['assembler_options'] == assembler_options)
-            ][['asm_dir']].drop_duplicates()
-        elif request == 'bin' or request == 'refiner':
-            assert (manifest.target_sample == sample).any(), Exception(f'Sample {sample} not in target samples')
-            assert ((assembler and binner and binning_mode) or (refiner and pipelines)), Exception('Must specify an assembler, binner and binning_mode, or a refiner with pipelines')
-            if binner and refiner is None:
-                assert (manifest.assembler ==assembler).any(), Exception(f'Assembler {assembler} not specified in config.')
-                assert (manifest.assembler_options == assembler_options).any(), Exception(f'Assembler options {assembler_options} not specified in config.')
-                assert (manifest.binner == binner).any(), Exception(f'Binner {binner} not specified in config.')
-                assert (manifest.binner_options == binner_options).any(), Exception(f'Binner options {binner_options} not specified in config.')
-                assert (manifest.binning_mode == binning_mode).any(), Exception(f'Binning mode {binning_mode} not specified in config.')
-
-                tsks = manifest.loc[
-                    (manifest['target_sample'] == sample) & (manifest['assembler'] == assembler) & (manifest['assembler_options'] == assembler_options) &
-                    (manifest['binner'] == binner) & (manifest['binner_options'] == binner_options) & (manifest['binning_mode'] == binning_mode)
-                ][['task_out_dir']]
-            elif binner is None and refiner: 
-                assert (manifest.refiner == refiner).any(), Exception(f'Refiner {refiner} not specified in config.')
-                assert (manifest.refiner_options == refiner_options).any(), Exception(f'Refiner options {refiner_options} not specified in config.')
-
-                pipelines = pipelines.split(':')
-                pipelines = tuple(tuple(e.split(',')) for e in pipelines)
-                tsks = manifest.loc[
-                    (manifest['target_sample'] == sample) & (manifest['refiner'] == refiner) & 
-                    (manifest['refiner_options'] == refiner_options) & (manifest['pipelines'] == pipelines)
-                ][['task_out_dir']]
-        elif request == 'map':
-            raise Exception("Not implemented.")
-        elif request == 'mode':
-            raise Exception("Not implemented.")
-        elif request == 'simulations':
-            print(self.config.simulation_dir, flush=True, end='')
-            return self.config.simulation_dir
-        elif request == 'mode':
-            raise Exception("Not implemented.")
-        elif request == 'list':
-            ret = ''
-            if item == 'samples':
-                samples = [os.path.basename(e) for e in glob.glob(f'{self.config.samples_dir}/*.gz')]
-                samples = [e.split(f'_{self.config.prefix1}')[0] for e in samples if f'_{self.config.prefix1}' in e]
-                ret = ' '.join(samples)
-            elif item == 'assemblers':
-                ret = ' '.join(set(a for a,p in self.config.assemblers))
-            elif item == 'binners':
-                ret = ' '.join(set(b for b,p in self.config.binners))
-            elif item == 'modes':
-                ret = ' '.join(set(self.config.binning_modes))
-            elif item == 'mappers':
-                ret = ' '.join(set(m for m,p in self.config.mappers))
-            print(ret, flush=True, end='')
-            return ret
-
-        elif request == 'list-options':
-            ret = ''
-            if item in [a for a, p in self.config.assemblers]:
-                ret = '\0'.join(p for a, p in self.config.assemblers if a == item)
-            if item in [a for a, p in self.config.binners]:
-                ret = '\0'.join(p for a, p in self.config.binners if a == item)
-            if item in [a for a, p in self.config.mappers]:
-                ret = '\0'.join(p for a, p in self.config.mappers if a == item)
-            sys.stdout.write(ret)
-            sys.stdout.flush()
-            return None
-
-        if tsks.empty:
-            raise Exception("Invalid combination. There are no tasks.")
-        elif len(tsks) > 1:
-            raise Exception("Input combination is underspecified. More than one assembly tasks shares that combination.")
+    def run_task(
+        self, type, index, target, assembler, aopt, binner, bopt, binning_mode, mapper, mopt, refiner, ropt, rpipe, threads
+    ):
+        """
+        Generic interface to launch tasks MAG-E tasks from.
+        """
+        manifest = parse_manifest(self.config.manifest)
+        if index:
+            tsk = manifest.iloc[index,:]
         else:
-            print(tsks.iloc[0,0], flush=True, end='')
-            return(tsks.iloc[0,0])
+            tsk = self.get_tasks(
+                manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
+            )
+        tsk = tsk if len(tsk) == 1 else tsk.loc[0,:]
+        if type == 'assembly':
+            tu.run_assembly(tsk)
+        elif type == 'mapping':
+            tu.run_mapping(tsk)
+        elif type == 'binning':
+            tu.run_binning(tsk)
+        elif type == 'qc':
+            tu.run_quality_control(tsk)
 
     def run_assembly(self, threads):
         """
@@ -311,7 +264,7 @@ class Project:
         """
         manifest = parse_manifest(self.config.manifest)
         gt.construct_ground_truth(
-            manifest, self.config.maggie_db_md,
+            manifest, self.config.ecosystem_db_metadata,
             min_contig_len, min_pident, min_prop, max_prop
         )
     

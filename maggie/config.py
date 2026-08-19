@@ -1,7 +1,7 @@
 import os
 import glob
 from os.path import join, exists
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from collections import defaultdict
 from pathlib import Path
 import yaml
@@ -21,34 +21,43 @@ def make_dict(data):
         ret[t].add(p)
     return ret
 
+null = 'NULL'
+null_asm = [['ASM', 'OPT'], ['ASM', 'OPT']]
+null_bin = [['BIN', 'OPT'], ['BIN', 'OPT']]
+null_map = [['MAP', 'OPT'], ['MAP', 'OPT']]
+null_mode = ['NULL', 'NULL']
+null_qc = ['NULL', 'NULL']
+null_refiner = [
+    ['REFN', 'REFN_OPT', ['ASM','ASMOPT'], [['BIN', 'BINOPT', 'MODE'], ['BIN', 'BINOPT', 'MODE']]]
+]
+
 @dataclass
 class Config:
-    project_name: str = 'NULL'
-    project_base: str = 'NULL'
-    use_api: str = 'NULL'
-    genomes_dir: str = 'NULL'
-    cluster_assignments: str = 'NULL'
-    samples_dir: str = 'NULL'
-    read_counts: str = 'NULL'
-    contig_properties: str = 'NULL'
-    prefix1: str  = 'NULL'
-    assemblers: list = field(default_factory=lambda: [['ASM', 'OPT'], ['ASM', 'OPT']])
-    binners: list = field(default_factory=lambda: [['BIN', 'OPT'], ['BIN', 'OPT']])
-    mappers: list = field(default_factory=lambda: [['BIN', 'OPT'], ['BIN', 'OPT']])
-    binning_modes: list =  field(default_factory=lambda: ['MODE', 'MODE'])
-    refiners: list = field(default_factory=lambda: 
-        [
-           ['REFN', 'REFN_OPT', [['ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE'], ['ASM', 'ASMOPT', 'BIN', 'BINOPT', 'MODE']]]
-        ]
-    )
-    qctools: list = field(default_factory=lambda: ['NULL', 'NULL'])
+    project_name: str = null
+    project_base: str = null
+    use_api: str = null
+    samples_dir: str = null
+    read_counts: str = null
+    contig_properties: str = null
+    prefix1: str  = null
+    ecosystem_db: str = null
+    assemblers: list = field(default_factory=lambda: null_asm)
+    binners: list = field(default_factory=lambda: null_bin)
+    mappers: list = field(default_factory=lambda: null_map)
+    binning_modes: list =  field(default_factory=lambda: null_mode)
+    refiners: list = field(default_factory=lambda: null_refiner)
+    qctools: list = field(default_factory=lambda: null_qc)
+    simulate: str = 'yes'
 
     @classmethod
     def from_yaml(cls, path: Path) -> "Config":
         with open(path) as f:
             data = yaml.safe_load(f)
+        keys = {f.name for f in fields(cls)}
+        for k in keys:
+            if k not in data:
+                data[k] = []
         o = cls(**data)
-        o.cluster_assignments = join(o.project_base, o.cluster_assignments)
         o.read_counts = join(o.project_base, o.read_counts)
         return o
 
@@ -59,10 +68,15 @@ class Config:
     def verify_config(self):
         """Check whether the configuration file is valid. """
         assert exists(self.project_base)
-        assert exists(self.genomes_dir)
         assert exists(self.samples_dir)
-        assert exists(self.cluster_assignments)
         assert exists(self.read_counts)
+        # Either left blank, or set to no or yes
+        assert (self.simulate == [] or self.simulate == 'no' or self.simulate == 'yes')
+        # If we're simulating, we need to have a valid ecosystem database
+        if (self.simulate == 'yes'):
+            assert exists(self.ecosystem_db)
+            assert exists(self.ecosystem_db_metadata)
+            assert exists(self.genomes_dir)
         assert 'NULL' not in self.prefix1
         assert all(exists(join(self.project_base, f'{mode}_datasets.csv')) for mode in self.binning_modes)
 
@@ -77,10 +91,10 @@ class Config:
                 for (ab, _, bn, _, _) in pipeline:
                     assert(hasattr(assembly, ab+'Assembler'))
                     assert(hasattr(binning, bn+'Binner'))
-        
-        # Make sure the quality control API is implemented 
-        for q in self.qctools:
-            assert hasattr(quality_control, q+'QCTool')
+            # Make sure the quality control API is implemented 
+            for q in self.qctools:
+                assert hasattr(quality_control, q+'QCTool')
+
 
         self.assemblers = [tupleize(e) for e in self.assemblers]
         self.binners = [tupleize(e) for e in self.binners]
@@ -127,20 +141,23 @@ class Config:
         return ' '.join(df.loc[df.target_sample == target].dataset.values)
 
     @property
-    def maggie_db_dir(self):
-        return join(self.project_base, 'database')
+    def ecosystem_db_metadata(self):
+        return join(self.ecosystem_db, 'ecosystem_metadata.csv')
 
     @property
-    def maggie_db_md(self):
-        return join(self.maggie_db_dir, 'metadata.csv')
+    def genomes_dir(self):
+        return join(self.ecosystem_db, 'genomes')
 
     @property
     def strain_dreps(self):
-        return join(self.maggie_db_dir, 'strain_dreps')
+        return join(self.ecosystem_db, 'strain_dreps')
 
     @property
     def simulation_dir(self):
-        return join(self.project_base, 'simulations')
+        if self.simulate == [] or self.simulate == 'yes':
+            return join(self.project_base, 'simulations')
+        else:
+            return join(self.project_base, 'read_links')
 
     @property
     def sylsp_dir(self):
