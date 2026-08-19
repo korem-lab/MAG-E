@@ -11,6 +11,7 @@ from . import assembly as ab, binning as bn, quality_control as qc
 
 
 def get_summary_names(data, is_refiner=False):
+    print(data)
     if is_refiner:
         summary_names = pd.DataFrame(
             {'tool':refiner, 'toolopt':ro, 'pipelines':pipelines} for refiner, ro, pipelines in data
@@ -32,35 +33,37 @@ def id_gen():
         return val
     return defaultdict(new_id)
 
+def make_ids(l):
+    ids = dict()
+    for k,v in l:
+        if k in ids:
+            ids[k][v] = len(ids[k])+1
+        else:
+            ids[k] = {v:1}
+    return ids
+
 def make_manifest(
     assemblers, mappers, binners, modes, refiners, qctools, simulation_dir, 
     assembly_cache, mapping_cache, bintask_dir, project_base
 ):
-    # Assert their unique
-    def chck(x):
-        assert len(x) == len(set(x)), Exception("List must be unique")
-    chck(assemblers)
-    chck(binners)
-    chck(modes)
-    chck(refiners)
-    chck(mappers)
+    # The same tool can be provided, but with different options. 
+    # Mapping each (tool, option) pair to a numerical id gives a simple naming scheme
+    aids = make_ids(assemblers)
+    mids = make_ids(mappers)
+    bids = make_ids(binners)
+    rids = make_ids(refiners)
+    id_to_string = lambda ids, t, o: f'({ids[t][o]})' if len(ids[t])>1 else ""
 
-    # There may be multiple assembler, binner, and refiners run with different options
-    # to give these a simple name, which can later be looked up, we construct tables
-    # that map each option to an integer "summary name"
-    rsmry = get_summary_names(refiners, is_refiner=True) 
-    bsmry = get_summary_names(binners)
-    asmry = get_summary_names(assemblers)
-    msmry = get_summary_names(mappers)
-    bintask_counter = id_gen()
-    assembly_counter = id_gen()
-    mapper_counter = id_gen()
+    # Enumerate the different directories 
+    bintask_id = id_gen()
+    asmcache_id = id_gen()
+    mapcache_id = id_gen()
     tasks = list()
     for (ab, abo), (mp, mpo), (bn, bno), mode in product(assemblers, mappers, binners, modes):
 
-        asm_num = assembly_counter[(ab, abo)]
-        map_num = mapper_counter[(ab, abo, mp, mpo)]
-        bin_task_num = bintask_counter[(ab, abo, mp, mpo, bn, bno, mode)]
+        asm_num = asmcache_id[(ab, abo)]
+        map_num = mapcache_id[(ab, abo, mp, mpo)]
+        bin_task_num = bintask_id[(ab, abo, mp, mpo, bn, bno, mode)]
         spec = {
             'simulation_dir': simulation_dir,
             'assembler': ab, 'assembler_options': abo, 'binner': bn, 'binner_options': bno,
@@ -70,9 +73,9 @@ def make_manifest(
         }
 
         # get the summary names for the binning runs
-        spec['assembler_summary_name'] = asmry[(asmry.tool == ab) & (asmry.toolopt == abo)].sname.item()
-        spec['binner_summary_name'] = bsmry[(bsmry.tool == bn) & (bsmry.toolopt == bno)].sname.item()
-        spec['mapping_summary_name'] = msmry[(msmry.tool == mp) & (msmry.toolopt == mpo)].sname.item()
+        spec['assembler_summary_name'] = id_to_string(aids, ab, abo)
+        spec['binner_summary_name'] = id_to_string(bids, bn, bno)
+        spec['mapping_summary_name'] = id_to_string(mids, mp, mpo)
 
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
@@ -85,14 +88,14 @@ def make_manifest(
 
 
     for (refiner, ro, pipelines) in refiners:
-        bin_task_num = bintask_counter[(refiner, ro, tuple(pipelines))]
-        asm_num = assembly_counter[(pipelines[0][0], pipelines[0][1])]
+        bin_task_num = bintask_id[(refiner, ro, tuple(pipelines))]
+        asm_num = [(pipelines[0][0], pipelines[0][1])]
         spec = {
             'qctools': qctools, 'simulation_dir': simulation_dir, 'is_refiner': True,
             'refiner': refiner, 'refiner_options': ro, 'pipelines': pipelines,
             'assembler': pipelines[0][0], 'assembler_options':pipelines[0][1]
         }
-        spec['refiner_summary_name'] = rsmry.loc[(rsmry.tool == refiner) & (rsmry.toolopt == ro) & (rsmry.pipelines == pipelines)].sname.item()
+        spec['refiner_summary_name'] = id_to_string(rids, ro, pipelines)
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target_sample'):
             spec['target_sample'] = trgt

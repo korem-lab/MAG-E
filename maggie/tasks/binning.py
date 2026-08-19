@@ -3,7 +3,7 @@ import pandas as pd
 from os import makedirs, rename
 from os.path import join, exists, abspath, splitext, basename, dirname
 from subprocess import run
-from ..utils import not_empty
+from ..utils import not_empty, soft_link
 import glob
 
 def jgi_summarize(bams, filename):
@@ -19,7 +19,7 @@ def bin_done(bin_dir):
 def softlink_assembly_to_taskdir(asm_dir, sample, task_out_dir, prefix=None):
     contigs = abspath(join(asm_dir, f'{sample}.fasta'))
     asm = join(task_out_dir, 'input', 'asm.fasta') if prefix is None else join(task_out_dir, 'input', f'{prefix}.fasta')
-    run(f'ln -f -s {contigs} {asm}', shell=True)
+    soft_link(contigs, asm)
     return asm
 
 def compute_idxstats(bam, idxstats):
