@@ -7,10 +7,15 @@ def check_genome_files_exist(genomes, directory):
     for g in genomes:
         assert exists(join(directory, f'{g}.fasta.gz'))
 
-def run_strain_clustering(genomes, genome_dir, drep_dir, threads, ani):
+def run_strain_clustering(genomes, genome_dir, drep_dir, threads, ani, force=False):
     """
     Cluster genomes at the strain level. Currently this is done with dRep.
     """
+
+    # If all the information is present, don't rerun it
+    if ('StrainCID' in genomes.columns) and ('isStrainRepr' in genomes.columns) \
+        and ('StrainRepr' in genomes.columns) and not force: 
+        return
     # construct the database
     os.makedirs(join(drep_dir), exist_ok=True)
     for sprp, spdf in genomes.groupby('SpeciesRepr'):
@@ -42,7 +47,10 @@ def get_dRep_cluster_info(grep, drep_dir):
         print('missing', grep)
         return None
 
-def build_database_table(database, genomes_dir, drep_dir):
+def build_database_table(database, genomes_dir, drep_dir, force=False):
+    if ('StrainCID' in database.columns) and ('isStrainRepr' in database.columns) \
+        and ('StrainRepr' in database.columns) and not force: 
+        return database
 
     database['SpeciesCID'] = database.SpeciesRepr
     database['isSpeciesRepr'] = database.genome.isin(database.SpeciesRepr)
@@ -76,10 +84,10 @@ def build_database_table(database, genomes_dir, drep_dir):
 
     return database
 
-def construct_sylphdb(genome_list, maggie_db_dir, db_prefix, c=200, t=8, force=False):
-    os.makedirs(maggie_db_dir,exist_ok=True)
-    if not force and os.path.exists(f'{maggie_db_dir}/{db_prefix}.syldb'):
+def construct_sylphdb(genome_list, ecosystem_db, db_prefix, c=200, t=8, force=False):
+    os.makedirs(ecosystem_db,exist_ok=True)
+    if not force and os.path.exists(f'{ecosystem_db}/{db_prefix}.syldb'):
         return
-    with open(os.path.join(maggie_db_dir, f'{db_prefix}.input_genome_list.txt'), 'w') as f:
+    with open(os.path.join(ecosystem_db, f'{db_prefix}.input_genome_list.txt'), 'w') as f:
         f.write('\n'.join(genome_list))
-    run(f'sylph sketch -l {maggie_db_dir}/{db_prefix}.input_genome_list.txt -o {maggie_db_dir}/{db_prefix} -t {t} -c {c}', shell=True)
+    run(f'sylph sketch -l {ecosystem_db}/{db_prefix}.input_genome_list.txt -o {ecosystem_db}/{db_prefix} -t {t} -c {c}', shell=True)
