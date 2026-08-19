@@ -27,6 +27,7 @@ def soft_link(src, dst):
 def print_and_return(s):
     print(s,flush=True,end='')
     return s
+
 def run_R_script(script, *args):
     dir = Path(__file__).parent
     cmd = f'Rscript {dir}/R/{script}.R {" ".join(args)}'
@@ -101,6 +102,10 @@ def compress(genomes, exe='pigz', script=None):
 
 def manifest_get(field, x):
     json.loads(x)[field]
+
+def rm_file(file):
+    if os.path.exists(file):
+        os.remove(file)
 
 def rm_dir(dir, remake=False):
     try:

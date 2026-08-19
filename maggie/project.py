@@ -160,13 +160,11 @@ class Project:
             flt('refiner', refiner) & flt('refiner_opt', ropt) & flt('pipelines', rpipe)
         ]
 
-    def get_task_directory(
-            self, manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
-        ):
-        tsks = self.get_tasks(
-            manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
-        )
-        if assembler and mapper and binner and binning_mode and target:
+    def get_task_directory(self, **kwargs):
+        tsks = self.get_tasks(**kwargs)
+        assembler, mapper, binner = kwargs['assembler'], kwargs['mapper'], kwargs['binner']
+        binning_mode, target, refiner = kwargs['binning_mode'], kwargs['target'], kwargs['refiner']
+        if assembler and mapper and (binner or refiner) and binning_mode and target:
             assert (binner and not refiner) or (refiner and not binner), Exception('Pick binner xor refiner.')
             tsks[['task_out_dir']].drop_duplicates()
         elif assembler and mapper and target:
@@ -182,9 +180,7 @@ class Project:
         return tsks.iloc[0,0]
 
     def query(self, 
-            type, target, assembler, aopt, binner, bopt, 
-            binning_mode, mapper, mopt, refiner, ropt, rpipe, simulations,
-            genomes, evaluations, of, within
+            type, target, of, within, simulations, genomes, evaluations, **kwargs
         ):
         """
         Queries the maggie project for information
@@ -199,9 +195,7 @@ class Project:
                 return print_and_return(self.config.genomes_dir)
             if evaluations:
                 return print_and_return(self.config.evaluation_dir)
-            task_dir = self.get_task_directory(
-                manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
-            )
+            task_dir = self.get_task_directory(manifest=manifest, target=target, **kwargs)
             return print_and_return(task_dir)
         elif type == 'list':
             assert of, Exception("--of must be specified if the query is a list.")
@@ -220,43 +214,47 @@ class Project:
             raise Exception('Only "dir" and "list" are valid queries.')
 
     def run_task(
-        self, type, index, target, assembler, aopt, binner, bopt, binning_mode, mapper, mopt, refiner, ropt, rpipe, threads
+        self, target, assembler, aopt, binner, bopt, binning_mode, 
+        mapper, mopt, map_sample, refiner, ropt, rpipe, qc, threads, force
     ):
         """
         Generic interface to launch tasks MAG-E tasks from.
         """
         manifest = parse_manifest(self.config.manifest)
-        if index:
-            tsk = manifest.iloc[index,:]
-        else:
-            tsk = self.get_tasks(
-                manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
-            )
-        tsk = tsk if len(tsk) == 1 else tsk.loc[0,:]
-        if type == 'assembly':
-            tu.run_assembly(tsk)
-        elif type == 'mapping':
-            tu.run_mapping(tsk)
-        elif type == 'binning':
-            tu.run_binning(tsk)
-        elif type == 'qc':
-            tu.run_quality_control(tsk)
+        tsk = self.get_tasks(
+            manifest, assembler, aopt, mapper, mopt, binner, bopt, 
+            binning_mode, refiner, ropt, rpipe, target
+        )
+        if tsk.empty:
+            raise Exception("No tasks fit the query.")
+        if assembler and mapper and (binner or refiner) and binning_mode:
+            if (len(tsk)!=1): raise Exception("Ambiguous. More than one task possible..")
+            if qc:
+                tu.run_quality_control(tsk, threads, force)
+            else:
+                tu.run_binning(tsk, threads, force)
+        elif assembler and mapper:
+            assert(len(tsk[['assembler', 'assembler_options','mapper','mapper_options','target']].drop_duplicates()) == 1)
+            tu.run_mapping(tsk.iloc[0,:], map_sample, threads, force)
+        elif assembler:
+            assert(len(tsk[['assembler', 'assembler_options','target']].drop_duplicates()) == 1)
+            tu.run_assembly(tsk.iloc[0,:], threads, force)
 
-    def run_assembly(self, threads):
-        """
-        Runs each assembly task in the manifest. 
-        """
+    #def run_assembly(self, threads):
+    #    """
+    #    Runs each assembly task in the manifest. 
+    #    """
 
-        manifest = parse_manifest(self.config.manifest)
-        tu.run_assemblies(manifest, threads)
+    #    manifest = parse_manifest(self.config.manifest)
+    #    tu.run_assemblies(manifest, threads)
 
-    def run_mapping(self, threads):
-        """
-        Runs each assembly task in the manifest. 
-        """
+    #def run_mapping(self, threads):
+    #    """
+    #    Runs each assembly task in the manifest. 
+    #    """
 
-        manifest = parse_manifest(self.config.manifest)
-        tu.run_mapping(manifest, threads)
+    #    manifest = parse_manifest(self.config.manifest)
+    #    tu.run_mapping(manifest, threads)
 
     def construct_ground_truth(self, min_contig_len=100, min_pident=99, min_prop=99, max_prop=101):
         """
@@ -268,17 +266,17 @@ class Project:
             min_contig_len, min_pident, min_prop, max_prop
         )
     
-    def run_binning(self, run_only, force_prep, force_bin, threads=8):
-        manifest = parse_manifest(self.config.manifest)
-        tu.run_bin_tasks(manifest, run_only, force_prep, force_bin, threads)
+    #def run_binning(self, run_only, force_prep, force_bin, threads=8):
+    #    manifest = parse_manifest(self.config.manifest)
+    #    tu.run_bin_tasks(manifest, run_only, force_prep, force_bin, threads)
 
-    def run_refine(self, run_only, force_refine, threads=8):
-        manifest = parse_manifest(self.config.manifest)
-        tu.run_refine_tasks(manifest, run_only, force_refine, threads)
+    #def run_refine(self, run_only, force_refine, threads=8):
+    #    manifest = parse_manifest(self.config.manifest)
+    #    tu.run_refine_tasks(manifest, run_only, force_refine, threads)
     
-    def run_quality_control(self, threads=8):
-        manifest = parse_manifest(self.config.manifest)
-        tu.run_quality_control(manifest, threads=threads, force=True)
+    #def run_quality_control(self, threads=8):
+    #    manifest = parse_manifest(self.config.manifest)
+    #    tu.run_quality_control(manifest, threads=threads, force=True)
 
     def calc_per_genome_metrics(self):
         # Construct the binning table for each binning tasks

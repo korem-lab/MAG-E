@@ -162,8 +162,7 @@ def query(
     _, directory = get_current_project()
     project = Project.load(directory)
     project.query(
-        type, target, assembler, assembler_option, binner, binner_option, binning_mode, mapper, mapper_option, refiner, refiner_option, refiner_pipelines, simulations, genomes, evaluations,
-        of, within
+        type, target, of, within, simulations, genomes, evaluations, assembler, assembler_option, binner, binner_option, binning_mode, mapper, mapper_option, refiner, refiner_option, refiner_pipelines
     )
 
 @app.command()

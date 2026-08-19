@@ -48,7 +48,8 @@ class MEGAHITAssembler(Assembler):
     name = 'MEGAHIT'
     exec = 'megahit'
 
-    def run_assembly(self, r1, r2, asm_dir, threads, options=''):
+    def run_assembly(self, r1, r2, asm_dir, threads, options):
+        rm_dir(asm_dir, remake=True)
         cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -f -o {asm_dir}/asm'
         run(cmd, shell=True)
     
@@ -57,7 +58,7 @@ class MEGAHITAssembler(Assembler):
 
     def clean_up(self, ts, asm_dir):
         old_fa_name = join(f'{asm_dir}/asm', 'final.contigs.fa')
-        new_fa_name= join(asm_dir, f'{ts}.fasta')
+        new_fa_name= join(asm_dir, f'contigs.fasta')
         rename(old_fa_name, new_fa_name)
         rm_dir(f'{asm_dir}/asm')
         self.reduce_fasta_header_to_contig_name(new_fa_name)
@@ -67,7 +68,8 @@ class metaSPAdesAssembler(Assembler):
     name = 'metaSPAdes'
     exec = 'metaspades.py'
 
-    def run_assembly(self, r1, r2, asm_dir, threads, options=''):
+    def run_assembly(self, r1, r2, asm_dir, threads, options):
+        rm_dir(asm_dir, remake=True)
         cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -o {asm_dir}/asm'
         run(cmd, shell=True)
 
@@ -80,7 +82,7 @@ class metaSPAdesAssembler(Assembler):
         And renames the contigs. 
         """
         old_fa_name = join(f'{asm_dir}/asm', 'contigs.fasta')
-        new_fa_name= join(asm_dir, f'{ts}.fasta')
+        new_fa_name= join(asm_dir, f'contigs.fasta')
         rename(old_fa_name, new_fa_name)
         rm_dir(f'{asm_dir}/asm')
         self.reduce_fasta_header_to_contig_name(new_fa_name)
