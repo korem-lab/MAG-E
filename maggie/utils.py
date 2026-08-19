@@ -5,9 +5,24 @@ import ast
 from pathlib import Path
 import os
 from os.path import join
+import glob
 import shutil
 import sys
 from subprocess import run
+
+def make_bash_template(name, time, mem, thread):
+    return f"""#!/bin/bash 
+#SBATCH --job-name={name}
+#SBATCH --time={time}
+#SBATCH --mem={mem}
+#SBATCH --account=pmg
+#SBATCH --cpus-per-task={thread}
+    """
+def add_cmd(cmd, script):
+    return script + f"\n{cmd}\n"
+
+def soft_link(src, dst):
+    run(f'ln -f -s {src} {dst}', shell=True)
 
 def print_and_return(s):
     print(s,flush=True,end='')
@@ -65,20 +80,27 @@ def parse_quality_control_table(file):
 def parse_manifest(file):
     df = pd.read_csv(file)
     df.fillna({'assembler_summary_name':'', 'binner_summary_name':'', 'refiner_summary_name':''}, inplace=True)
-    df.qctools = df.qctools.apply(ast.literal_eval)
     df.samples = df.samples.apply(ast.literal_eval)
-    df.pipelines = df.pipelines.apply(lambda x: ast.literal_eval(x) if type(x) == str else x)
+    if 'qctools' in df.columns:
+        df.qctools = df.qctools.apply(ast.literal_eval)
+    if 'pipelines' in df.columns:
+        df.pipelines = df.pipelines.apply(lambda x: ast.literal_eval(x) if type(x) == str else x)
     return df
 
-def decompress(genomes, exe='unpigz'):
-    run(f'{exe} -f {genomes}', shell=True)
+def decompress(genomes, exe='unpigz', script=None):
+    cmd = f'{exe} -f {genomes}'
+    if script:
+        return add_cmd(cmd, script)
+    run(cmd, shell=True)
 
-def compress(genomes, exe='pigz'):
-    run(f'{exe} -f {genomes}', shell=True)
+def compress(genomes, exe='pigz', script=None):
+    cmd = f'{exe} -f {genomes}'
+    if script:
+        return add_cmd(cmd, script)
+    run(cmd, shell=True)
 
 def manifest_get(field, x):
     json.loads(x)[field]
-
 
 def rm_dir(dir, remake=False):
     try:
