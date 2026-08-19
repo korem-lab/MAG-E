@@ -81,8 +81,8 @@ def verify_project(
     "Verifies the config, and populates the project with the required directories."
     _, directory = get_current_project()
     project = Project.load(directory, verify=False)
-    project.build_core_directories()
     project.config.verify_config()
+    project.build_core_directories()
 
 @app.command()
 def make_maggie_db(
@@ -115,14 +115,15 @@ def make_mirrors(
 def simulate_mgx(
     threads: int = typer.Option(8, help='Threads to run InSilicoSeq'),
     n_reads: str = typer.Option('auto', help='Number of reads to simulate for each sample. Default matches the sample.'),
-    seed: int= typer.Option(37, help='Random seed value passed to insilico seq')
+    seed: int= typer.Option(37, help='Random seed value passed to insilico seq'),
+    print_script: bool = typer.Option(False, help='Writes slurm scripts (rather than running sequentially).'),
 ):
     """
     Simulated metagenomes using the mirror specifications.
     """
     _, directory = get_current_project()
     project = Project.load(directory)
-    project.simulate_mgx(threads, n_reads, seed)
+    project.simulate_mgx(threads, n_reads, seed, print_script)
 
 @app.command()
 def construct_tasks(
@@ -136,7 +137,7 @@ def construct_tasks(
 
 @app.command()
 def query(
-    type: str = typer.Argument(..., help='Either dir or list'),
+    type: str = typer.Argument(..., help='Either dir, list, or complete'),
     target: str = typer.Option(None, help='Target sample.'),
     assembler: str = typer.Option(None, help='An assembler in config.'),
     assembler_option: str = typer.Option('default', help='CLI option string.'),
@@ -164,7 +165,26 @@ def query(
         type, target, assembler, assembler_option, binner, binner_option, binning_mode, mapper, mapper_option, refiner, refiner_option, refiner_pipelines, simulations, genomes, evaluations,
         of, within
     )
-    
+
+@app.command()
+def run(
+    target: str = typer.Option(None, help='Target sample.'),
+    assembler: str = typer.Option(None, help='An assembler in config.'),
+    assembler_option: str = typer.Option('default', help='CLI option string.'),
+    binner: str = typer.Option(None, help='A binner in config.'),
+    binner_option: str = typer.Option('default', help='CLI option string.'),
+    binning_mode: str = typer.Option(None, help='Binning mode in config'),
+    mapper: str = typer.Option(None, help='A mapper in config.'),
+    mapper_option: str = typer.Option('default', help='CLI option string'),
+    refiner: str = typer.Option(None, help='A refiner in.'),
+    refiner_option: str = typer.Option('default', help='CLI option string'),
+    refiner_pipelines: str = typer.Option(None, help='String specifying the refiner pipelines.'),
+    threads: int  = typer.Option(8, help='Number of threads to launch tasks with')
+):
+    _, directory = get_current_project()
+    project = Project.load(directory)
+    project.run_task(target, assembler, assembler_option, binner, binner_option, binning_mode, mapper, mapper_option, refiner, refiner_option, refiner_pipelines, threads)
+
 
 @app.command()
 def run_assembly(
