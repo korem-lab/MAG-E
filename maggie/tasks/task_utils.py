@@ -1,12 +1,11 @@
 from os.path import join, exists, basename
 import pandas as pd
 import hashlib
-from subprocess import run, DEVNULL
 from functools import reduce
 from itertools import product
 from collections import defaultdict
 import json
-from ..utils import parse_binning_mode_datasets, write_done_flag, rm_dir, get_contig_name, remove_fasta_ext
+from ..utils import parse_binning_mode_datasets, rm_dir, get_contig_name, remove_fasta_ext, flatten, run
 from . import assembly as ab, binning as bn, quality_control as qc, mapping as mp
 
 
@@ -51,7 +50,6 @@ def make_manifest(
     aids = make_ids(assemblers)
     mids = make_ids(mappers)
     bids = make_ids(binners)
-    rids = make_ids(refiners)
     id_to_string = lambda ids, t, o: f'({ids[t][o]})' if len(ids[t])>1 else ""
 
     # Enumerate the different directories 
@@ -78,164 +76,185 @@ def make_manifest(
         spec['mapping_summary_name'] = id_to_string(mids, mp, mpo)
 
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
-        for trgt, df in datasets.groupby('target_sample'):
-            spec['target_sample'] = trgt
+        for trgt, df in datasets.groupby('target'):
+            spec['target'] = trgt
             spec['samples'] = [trgt] + sorted(list(set(df.dataset.to_list()) - {trgt}))
             spec['task_out_dir'] = join(bintask_dir, f'bin_task_{bin_task_num}', trgt)
             spec['asm_dir'] = join(assembly_cache, f'assembly_task_{asm_num}', trgt)
             spec['map_dir'] = join(mapping_cache, f'mapping_task_{map_num}', trgt)
             tasks.append(spec.copy())
 
-
-    for (refiner, ro, pipelines) in refiners:
-        bin_task_num = bintask_id[(refiner, ro, tuple(pipelines))]
-        asm_num = [(pipelines[0][0], pipelines[0][1])]
+    # Refiners will be considered just another binner.
+    # i.e, it will the refiner and options will be listed under binner and binner options
+    # however, the is_refiner will be true, and their will be a pipeline column
+    for (rf, ro, ab, abo, mp, mpo, binner_set) in refiners:
+        bin_task_num = bintask_id[(rf, ro, tuple(binner_set))]
+        asm_num = asmcache_id((ab, abo))
+        map_num = mapcache_id((ab, abo, mp, mpo))
         spec = {
-            'qctools': qctools, 'simulation_dir': simulation_dir, 'is_refiner': True,
-            'refiner': refiner, 'refiner_options': ro, 'pipelines': pipelines,
-            'assembler': pipelines[0][0], 'assembler_options':pipelines[0][1]
+            'simulation_dir': simulation_dir,
+            'assembler': ab, 'assembler_options': abo, 'binner': rf, 'binner_options': ro,
+            'mapper': mp, 'mapper_options': mpo, 'binner_set': binner_set, 'is_refiner':True,
+            'qctools': qctools
         }
-        spec['refiner_summary_name'] = id_to_string(rids, ro, pipelines)
-        datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
-        for trgt, df in datasets.groupby('target_sample'):
-            spec['target_sample'] = trgt
-            spec['samples'] = [trgt] + sorted(list(set(df.dataset.to_list()) - {trgt}))
+        spec['binner_summary_name'] = id_to_string(bids, rf, ro+' '.join(flatten(binner_set)))
+        for trgt, df in datasets.groupby('target'):
+            spec['target'] = trgt
+            spec['samples'] = pd.NA
             spec['task_out_dir'] = join(bintask_dir, f'bin_task_{bin_task_num}', trgt)
             spec['asm_dir'] = join(assembly_cache, f'assembly_task_{asm_num}', trgt)
             tasks.append(spec.copy())
-            
+            spec['map_dir'] = join(mapping_cache, f'mapping_task_{map_num}', trgt)
     for spec in tasks:
         spec['task_name'] = hashlib.sha256(json.dumps(spec).encode()).hexdigest()
     tasks = pd.DataFrame(tasks)
     return tasks
 
+def get_tasks(
+        manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, binner_set, target
+    ):
+    flt = lambda x,y: manifest[x] == y if y is not None else pd.Series(True, index=manifest.index)
+    if binner_set:
+        binner_set = tuple(tuple(e.split(',')) for e in binner_set.split(':'))
+    return manifest.loc[
+        flt('target', target) & flt('assembler', assembler) & flt('assembler_options', aopt) &
+        flt('mapper', mapper) & flt('mapper_options', mopt) & flt('binner', binner) & 
+        flt('binner_options', bopt) & flt('binning_mode', binning_mode) &
+        flt('binner_set', binner_set)
+    ]
+
+def get_task_directory(self, **kwargs):
+    tsks = self.get_tasks(**kwargs)
+    assembler, mapper, binner = kwargs['assembler'], kwargs['mapper'], kwargs['binner']
+    binning_mode, target = kwargs['binning_mode'], kwargs['target']
+    if assembler and mapper and binner and binning_mode and target:
+        tsks[['task_out_dir']].drop_duplicates()
+    elif assembler and mapper and target:
+        tsks[['map_dir']].drop_duplicates()
+    elif assembler and target:
+        tsks[['asm_dir']].drop_duplicates()
+    else:
+        Exception("Invalid query.")
+    if tsks.empty:
+        raise Exception("No tasks fit the query.")
+    elif len(tsks) > 1:
+        raise Exception("More than task fits the query") 
+    return tsks.iloc[0,0]
+
 def run_assembly(task, threads=8, force=False):
-    r1 = join(task.simulation_dir, f'{task.target_sample}_R1.fastq.gz')
-    r2 = join(task.simulation_dir, f'{task.target_sample}_R2.fastq.gz')
+    r1 = join(task.simulation_dir, f'{task.target}_R1.fastq.gz')
+    r2 = join(task.simulation_dir, f'{task.target}_R2.fastq.gz')
     options = '' if task.assembler_options == 'default' else task.assembler_options
     assembler = getattr(ab, f'{task.assembler}Assembler')()
-    if force or not assembler.assembly_done(task.target_sample, task.asm_dir):
-        assembler.run_assembly(r1, r2, task.asm_dir, threads, options)
-    assembler.clean_up(task.target_sample, task.asm_dir)
-    assert assembler.assembly_done(task.target_sample, task.asm_dir)
+    kwargs = task.to_dict() | {'threads':threads}
+    if force or not assembler.main_done(**kwargs):
+        rm_dir(task.asm_dir, remake=True)
+        assembler.run_main(**kwargs)
+    assembler.clean_up(**kwargs)
+    assert assembler.done(**kwargs)
 
-def run_assemblies(manifest, threads=8):
-    asm_tasks = manifest[~manifest.is_refiner][['target_sample', 'simulation_dir', 'asm_dir', 'assembler', 'assembler_options']].drop_duplicates()
-    print('Total assembly tasks: ', len(asm_tasks))
-    for i in range(len(asm_tasks)):
-        run_assembly(asm_tasks.iloc[i,:], threads)
-
-def run_mapping(task, stage, map_sample=None, threads=8, force=False):
-    if map_sample is None:
-        map_sample = task.target_sample
+def run_mapping(task, stage, map_sample, threads=8, force=False):
     assert map_sample in task.samples
     r1 = join(task.simulation_dir, f'{map_sample}_R1.fastq.gz')
     r2 = join(task.simulation_dir, f'{map_sample}_R2.fastq.gz')
     mapper = getattr(mp, f'{task.mapper}Mapper')()
     kwargs = {'r1':r1, 'r2':r2, 'map_sample':map_sample, 'threads':threads}
     kwargs = task.to_dict() | kwargs
-    if stage == 'all':
-        if force or not mapper.pre_done(task.map_dir):
+    if stage == 'prep' or stage == 'all':
+        if force or not mapper.prep_done(**kwargs):
+            rm_dir(task.map_dir, remake=True)
             mapper.run_prep(**kwargs)
-        if force or not mapper.map_done(task.map_dir):
-            mapper.run_map(**kwargs)
-        mapper.cleanup(task.map_dir)
-        assert mapper.mapping_done(task.map_dir)
-    elif stage == 'prep':
-        if force or not mapper.pre_done(task.map_dir):
-            mapper.run_prep(**kwargs)
-    elif stage == 'map':
-        if force or not mapper.map_done(task.map_dir):
-            mapper.run_map(**kwargs)
-        mapper.cleanup(task.map_dir)
-        assert mapper.mapping_done(task.map_dir)
-    else:
-        Exception('Not acceptable mapping stage.')
+    if stage == 'main' or stage == 'all':
+        if force or not mapper.main_done(**kwargs):
+            mapper.run_main(**kwargs)
 
-def run_mappings(manifest, stage='all', threads=8):
-    map_tasks = manifest[['target_sample', 'simulation_dir', 'asm_dir', 'map_dir','mapper', 'mapper_options', 'samples']].drop_duplicates()
-    for i in range(len(map_tasks)):
-        t = map_tasks.iloc[i,:]
-        for s in t.samples:
-            run_mapping(t, stage, map_sample=s, threads=threads)
+    mapper.clean_up(task.map_dir)
+    assert mapper.mapping_done(task.map_dir)
 
-def run_bin_tasks(manifest, run_only=None, force_prep=False, force_bin=False, threads=8):
-    # run prep
-    bin_tasks = manifest[~manifest.is_refiner]
-    if run_only is None or run_only == 'prep':
-        for i in range(len(bin_tasks)):
-            t = bin_tasks.iloc[i,:]
-            if force_prep or not task_done(t, 'prep', clear=True):
-                run_prep(t, threads)
-    # run bin
-    if run_only is None or run_only == 'bin':
-        for i in range(len(bin_tasks)):
-            t = bin_tasks.iloc[i,:]
-            if force_bin or not task_done(t, 'bin', clear=True):
-                run_bin(t, threads)
+def run_binning(task, stage, threads=8, force=False):
+    binner = getattr(bn, f'{task.binner}Binner')()
+    kwargs = task.to_dict() | {'threads':threads}
+    if stage == 'prep' or stage == 'all':
+        if force or not binner.prep_done(**kwargs):
+            rm_dir(join(task.task_out_dir, 'input'),remake=True)
+            binner.run_prep(**kwargs)
+    if stage == 'main' or stage == 'all':
+        if force or not binner.main_done(**kwargs):
+            rm_dir(join(task.task_out_dir, 'output'),remake=True)
+            binner.run_main(**kwargs)
 
-def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
-    refine_tasks = manifest[manifest.is_refiner] 
-    bin_tasks = manifest[~manifest.is_refiner]
-    if run_only is None or run_only == 'refine':
-        for i in range(len(refine_tasks)):
-            t = refine_tasks.iloc[i, :]
-            if force_refine or not task_done(t, 'bin', clear=True):
-                ppln_bin_out = list()
-                for (ab, abo, bn, bno, mode) in t.pipelines:
-                    # select bin task
-                    bt = bin_tasks.loc[
-                        (bin_tasks.assembler == ab) & (bin_tasks.assembler_options == abo) & 
-                        (bin_tasks.binner == bn) & (bin_tasks.binner_options == bno) & 
-                        (bin_tasks.binning_mode == mode) & (bin_tasks.target_sample == t.target_sample)
-                    ]
-                    assert len(bt) == 1
-                    # get the path
-                    ppln_bin_out.append(bt.task_out_dir.item())
-                run_bin(t, threads, refine=True, ppln_bin_out=ppln_bin_out)
+def run_quality_control(task, qctool, threads=8, force=False):
+    qctool = getattr(qc, f'{qctool}QCTool')()
+    kwargs = task.to_dict() | {'threads':threads}
+    if force or not qctool.main_done(**kwargs):
+        qctool.run_main(**kwargs)
+        qctool.cleanup(**kwargs)
+    assert qctool.main_done(**kwargs)
 
-def run_prep(spec, threads):
-    print('run_prep:', spec.task_name, flush=True)
-    b = getattr(bn, spec.binner + 'Binner')()
-    b.run_prep(**(spec.to_dict() | {'threads':threads}))
-    write_done_flag(spec.task_out_dir, name='prep')
+#def run_quality_control(manifest, force=False, threads=8):
+#    for i in range(len(manifest)):
+#        t = manifest.loc[i,:]
+#        tables = list()
+#        for q in t.qctools:
+#            q = getattr(qc, q+'QCTool')()
+#            if not q.has_bins(t.task_out_dir):
+#                continue
+#            if not q.done(t.task_out_dir):
+#                q.run(**(t.to_dict() | {'threads':threads}))
+#            tables.append(q.to_qctable(**(t.to_dict() | {'threads':threads})))
+#        if tables:
+#            qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
+#            qc_table['task_name'] = t.task_name
+#            qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
 
-def run_bin(spec, threads, refine=False, ppln_bin_out=None):
-    print('run_bin:', spec.task_name,flush=True)
-    b = getattr(bn, (spec.binner + 'Binner') if not refine else (spec.refiner + 'Refiner'))()
-    spec.binner_options = '' if spec.binner_options == 'default' else spec.binner_options
-    spec.refiner_options = '' if spec.refiner_options == 'default' else spec.refiner_options
-    if refine:
-        assert ppln_bin_out 
-        aux = {'ppln_bin_out':ppln_bin_out, 'threads':threads}
-    else:
-        aux = {'threads':threads}
-    b.run_binning(**(spec.to_dict() | aux))
-    write_done_flag(spec.task_out_dir, name='bin')
+#def run_mappings(manifest, stage='all', threads=8):
+#    map_tasks = manifest[['target', 'simulation_dir', 'asm_dir', 'map_dir','mapper', 'mapper_options', 'samples']].drop_duplicates()
+#    for i in range(len(map_tasks)):
+#        t = map_tasks.iloc[i,:]
+#        for s in t.samples:
+#            run_mapping(t, stage, map_sample=s, threads=threads)
 
-def clear_prep(task_out_dir):
-    rm_dir(join(task_out_dir, 'input'))
-    rm_dir(join(task_out_dir, 'prep_DONE'))
+#def run_assemblies(manifest, threads=8):
+#    asm_tasks = manifest[~manifest.is_refiner][['target', 'simulation_dir', 'asm_dir', 'assembler', 'assembler_options']].drop_duplicates()
+#    print('Total assembly tasks: ', len(asm_tasks))
+#    for i in range(len(asm_tasks)):
+#        run_assembly(asm_tasks.iloc[i,:], threads)
 
-def clear_bin(task_out_dir):
-    rm_dir(join(task_out_dir, 'output/bins'))
-    rm_dir(join(task_out_dir, 'bin_DONE'))
+#def run_binnings(manifest, run_only=None, force_prep=False, force_bin=False, threads=8):
+#    # run prep
+#    bin_tasks = manifest[~manifest.is_refiner]
+#    if run_only is None or run_only == 'prep':
+#        for i in range(len(bin_tasks)):
+#            t = bin_tasks.iloc[i,:]
+#            if force_prep or not task_done(t, 'prep', clear=True):
+#                run_prep(t, threads)
+#    # run bin
+#    if run_only is None or run_only == 'bin':
+#        for i in range(len(bin_tasks)):
+#            t = bin_tasks.iloc[i,:]
+#            if force_bin or not task_done(t, 'bin', clear=True):
+#                run_bin(t, threads)
+#
+#def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
+#    refine_tasks = manifest[manifest.is_refiner] 
+#    bin_tasks = manifest[~manifest.is_refiner]
+#    if run_only is None or run_only == 'refine':
+#        for i in range(len(refine_tasks)):
+#            t = refine_tasks.iloc[i, :]
+#            if force_refine or not task_done(t, 'bin', clear=True):
+#                ppln_bin_out = list()
+#                for (ab, abo, bn, bno, mode) in t.pipelines:
+#                    # select bin task
+#                    bt = bin_tasks.loc[
+#                        (bin_tasks.assembler == ab) & (bin_tasks.assembler_options == abo) & 
+#                        (bin_tasks.binner == bn) & (bin_tasks.binner_options == bno) & 
+#                        (bin_tasks.binning_mode == mode) & (bin_tasks.target == t.target)
+#                    ]
+#                    assert len(bt) == 1
+#                    # get the path
+#                    ppln_bin_out.append(bt.task_out_dir.item())
+#                run_bin(t, threads, refine=True, ppln_bin_out=ppln_bin_out)
 
-def run_quality_control(manifest, force=False, threads=8):
-    for i in range(len(manifest)):
-        t = manifest.loc[i,:]
-        tables = list()
-        for q in t.qctools:
-            q = getattr(qc, q+'QCTool')()
-            if not q.has_bins(t.task_out_dir):
-                continue
-            if not q.done(t.task_out_dir):
-                q.run(**(t.to_dict() | {'threads':threads}))
-            tables.append(q.to_qctable(**(t.to_dict() | {'threads':threads})))
-        if tables:
-            qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
-            qc_table['task_name'] = t.task_name
-            qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
 
 def construct_binning_tables(manifest):
     for i in range(len(manifest)):
@@ -245,7 +264,7 @@ def construct_binning_tables(manifest):
         else:
             b = getattr(bn, t.binner+'Binner')()
         bins = b.bins_as_fasta(join(t.task_out_dir, 'output/bins'))
-        bint = compute_binning_table(t.task_name, t.target_sample, bins, t.asm_dir)
+        bint = compute_binning_table(t.task_name, t.target, bins, t.asm_dir)
         bint.to_csv(join(t.task_out_dir, 'output', 'binning_table.csv'))
 
 def compute_binning_table(task_name, sample, bins, gt_dir):
@@ -342,61 +361,6 @@ def compute_fp(df):
     fps.drop('level_1',axis=1,inplace=True)
     return fps 
 
-def task_done(bntsk, stage='all', report=False, only_not_done=False, clear=False):
-    # TODO ADD QC STAGE, and BIN TABLE STAGE
-    if stage == 'all' or stage == 'prep':
-        task_out_dir = bntsk.task_out_dir
-        b = getattr(bn, bntsk.binner+'Binner')()
-        prep_done =  b.prep_done(**bntsk.to_dict())
-        prep_done &= exists(join(task_out_dir, 'prep_DONE'))
-        if not prep_done and report:
-            print('bin prep not DONE', bntsk.task_name, flush=True)
-        if not prep_done and clear:
-            clear_prep(task_out_dir)
-            clear_bin(task_out_dir)
-        if stage == 'prep':
-            return prep_done
-
-    if stage == 'all' or stage == 'bin':
-        task_out_dir = bntsk.task_out_dir
-        b = getattr(bn, (bntsk.binner + 'Binner') if not bntsk.is_refiner else (bntsk.refiner+'Refiner'))()
-        bin_done =  b.bin_done(**bntsk.to_dict())
-        bin_done &= exists(join(task_out_dir, 'bin_DONE'))
-        if not bin_done and report:
-            print('bin not DONE', bntsk.task_name, flush=True)
-        if not bin_done and clear:
-            clear_bin(task_out_dir)
-        if stage == 'bin':
-            return bin_done
-
-    if stage == 'all' or stage == 'qc':
-        task_out_dir = bntsk.task_out_dir
-        b = getattr(qc, (bntsk.binner + 'Binner') if not bntsk.is_refiner else (bntsk.refiner+'Refiner'))()
-        bin_done =  b.bin_done(**bntsk.to_dict())
-        bin_done &= exists(join(task_out_dir, 'bin_DONE'))
-        if not bin_done and report:
-            print('bin not DONE', bntsk.task_name, flush=True)
-        if not bin_done and clear:
-            clear_bin(task_out_dir)
-        if stage == 'bin':
-            return bin_done
-
-    #if stage == 'all' or stage == 'post':
-    #    spec = json.loads(bntsk.post_spec)
-    #    task_out_dir = spec['task_out_dir']
-    #    post_done = all(getattr(bn, b+'Binner').post_done(**spec) for b in spec['binners'])
-    #    post_done &= exists(join(task_out_dir, 'post_DONE'))
-    #    if report:
-    #        if only_not_done and not post_done:
-    #            print('post_NOT_DONE', bntsk.task_name, bntsk.description)
-    #        elif not only_not_done:
-    #            print('post_NOT_DONE' if not post_done else 'post_DONE', bntsk.task_name)
-    #    if not post_done and clear:
-    #        clear_post(spec['task_out_dir'])
-    #    if stage == 'post':
-    #        return post_done
-
-    return prep_done and bin_done
 
 def compute_idxstats(bam, idxstats):
-    run(f'samtools idxstats {bam} > {idxstats}',shell=True)
+    run(f'samtools idxstats {bam} > {idxstats}')

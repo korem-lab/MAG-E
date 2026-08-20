@@ -3,15 +3,15 @@ import gzip
 from os.path import exists, join, dirname, normpath
 from os import rename
 import re
-from subprocess import run
-from ..utils import parse_fasta, rm_dir
+from ..utils import parse_fasta, rm_dir, run
+
 
 class Assembler(ABC):
     name: str
     execs: str
 
     @abstractmethod
-    def run_assembly(self, r1, r2, asm_dir, threads, options=''):
+    def run_main(self, r1, r2, asm_dir, threads, assembler_options):
         """
         Runs the assembly algorithm according to its command-line interface.
         """
@@ -31,8 +31,8 @@ class Assembler(ABC):
         only the contig name with no whitespace."""
         ...
 
-    def assembly_done(self, ts, asm_dir):
-        return exists(join(asm_dir, f'{ts}.fasta'))
+    def main_done(self, ts, asm_dir):
+        return exists(join(asm_dir, f'contigs.fasta'))
     
     def reduce_fasta_header_to_contig_name(self, file, gz=False):
         fs = open(file) if not gz else gzip.open(file)
@@ -48,10 +48,10 @@ class MEGAHITAssembler(Assembler):
     name = 'MEGAHIT'
     exec = 'megahit'
 
-    def run_assembly(self, r1, r2, asm_dir, threads, options):
+    def run_main(self, r1, r2, asm_dir, threads, assembler_options):
         rm_dir(asm_dir, remake=True)
-        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -f -o {asm_dir}/asm'
-        run(cmd, shell=True)
+        cmd = f'{self.exec} -t {threads} {assembler_options} -1 {r1} -2 {r2} -f -o {asm_dir}/asm'
+        run(cmd, print=True)
     
     def reduce_header(self, header):
         return header.split()[0]
@@ -68,10 +68,10 @@ class metaSPAdesAssembler(Assembler):
     name = 'metaSPAdes'
     exec = 'metaspades.py'
 
-    def run_assembly(self, r1, r2, asm_dir, threads, options):
+    def run_main(self, r1, r2, asm_dir, threads, assembler_options):
         rm_dir(asm_dir, remake=True)
-        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -o {asm_dir}/asm'
-        run(cmd, shell=True)
+        cmd = f'{self.exec} -t {threads} {assembler_options} -1 {r1} -2 {r2} -o {asm_dir}/asm'
+        run(cmd, print=True)
 
     def reduce_header(self, header):
         return re.findall('(NODE_[0-9]+)_', header)[0]
