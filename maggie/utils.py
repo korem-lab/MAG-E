@@ -8,7 +8,7 @@ from os.path import join
 import glob
 import shutil
 import sys
-from subprocess import run
+from subprocess import run as _run
 
 def make_bash_template(name, time, mem, thread):
     return f"""#!/bin/bash 
@@ -18,6 +18,20 @@ def make_bash_template(name, time, mem, thread):
 #SBATCH --account=pmg
 #SBATCH --cpus-per-task={thread}
     """
+
+def printit(func):
+    def wrapper(*args, **kwargs):
+        print(args[0] if args else kwargs.get('cmd'), flush=True)
+        return None
+    return wrapper
+
+@printit
+def run(cmd, print=False):
+    if print:
+        print(cmd, flush=True)
+    else:
+        _run(cmd, shell=True)
+
 def add_cmd(cmd, script):
     return script + f"\n{cmd}\n"
 
@@ -32,7 +46,7 @@ def run_R_script(script, *args):
     dir = Path(__file__).parent
     cmd = f'Rscript {dir}/R/{script}.R {" ".join(args)}'
     print(cmd)
-    run(cmd, shell=True)
+    run(cmd)
 
 def write_done_flag(task_out_dir, name):
     Path(os.path.join(task_out_dir, f'{name}_DONE')).touch()
@@ -71,7 +85,7 @@ def parse_contig_properties(file):
 
 def parse_binning_mode_datasets(file):
     df = pd.read_csv(file)
-    assert ['target_sample', 'dataset'] == df.columns.to_list()
+    assert ['target', 'dataset'] == df.columns.to_list()
     return df
 
 def parse_quality_control_table(file):
@@ -88,32 +102,39 @@ def parse_manifest(file):
         df.pipelines = df.pipelines.apply(lambda x: ast.literal_eval(x) if type(x) == str else x)
     return df
 
+def flatten(elem, newl):
+    if type(elem) != list:
+        newl.append(elem)
+    else:
+        for subl in elem:
+            flatten(subl, newl)
+
 def decompress(genomes, exe='unpigz', script=None):
     cmd = f'{exe} -f {genomes}'
     if script:
         return add_cmd(cmd, script)
-    run(cmd, shell=True)
+    run(cmd)
 
 def compress(genomes, exe='pigz', script=None):
     cmd = f'{exe} -f {genomes}'
     if script:
         return add_cmd(cmd, script)
-    run(cmd, shell=True)
+    run(cmd)
 
 def manifest_get(field, x):
     json.loads(x)[field]
 
+@printit
 def rm_file(file):
     if os.path.exists(file):
         os.remove(file)
-
+@printit
 def rm_dir(dir, remake=False):
     try:
-        if os.path.exists(dir):
-            if os.path.isdir(dir):
-                shutil.rmtree(dir)
-            elif os.path.isfile(dir):
-                os.remove(dir)
+        if os.path.exists(dir) and os.path.isdir(dir):
+            shutil.rmtree(dir)
+            if remake:
+                os.makedirs(dir)
     except FileNotFoundError:
         if remake:
             os.makedirs(dir)

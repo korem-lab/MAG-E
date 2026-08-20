@@ -148,36 +148,6 @@ class Project:
             manifest.to_csv(join(self.config.project_base, 'manifest.csv'), index=None)
         return manifest
 
-    def get_tasks(
-            self, manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, refiner, ropt, rpipe, target
-        ):
-        flt = lambda x,y: manifest[x] == y if y is not None else pd.Series(True, index=manifest.index)
-        rpipe = tuple(tuple(e.split(',')) for e in rpipe.split(':'))
-        return manifest.loc[
-            flt('target_sample', target) & flt('assembler', assembler) & flt('assembler_options', aopt) &
-            flt('mapper', mapper) & flt('mapper_options', mopt) & flt('binner', binner) & 
-            flt('binner_options', bopt) & flt('binning_mode', binning_mode) &
-            flt('refiner', refiner) & flt('refiner_opt', ropt) & flt('pipelines', rpipe)
-        ]
-
-    def get_task_directory(self, **kwargs):
-        tsks = self.get_tasks(**kwargs)
-        assembler, mapper, binner = kwargs['assembler'], kwargs['mapper'], kwargs['binner']
-        binning_mode, target, refiner = kwargs['binning_mode'], kwargs['target'], kwargs['refiner']
-        if assembler and mapper and (binner or refiner) and binning_mode and target:
-            assert (binner and not refiner) or (refiner and not binner), Exception('Pick binner xor refiner.')
-            tsks[['task_out_dir']].drop_duplicates()
-        elif assembler and mapper and target:
-            tsks[['map_dir']].drop_duplicates()
-        elif assembler and target:
-            tsks[['asm_dir']].drop_duplicates()
-        else:
-            Exception("Invalid query.")
-        if tsks.empty:
-            raise Exception("No tasks fit the query.")
-        elif len(tsks) > 1:
-            raise Exception("More than task fits the query") 
-        return tsks.iloc[0,0]
 
     def query(self, 
             type, target, of, within, simulations, genomes, evaluations, **kwargs
@@ -195,17 +165,19 @@ class Project:
                 return print_and_return(self.config.genomes_dir)
             if evaluations:
                 return print_and_return(self.config.evaluation_dir)
-            task_dir = self.get_task_directory(manifest=manifest, target=target, **kwargs)
+            task_dir = tu.get_task_directory(manifest=manifest, target=target, **kwargs)
             return print_and_return(task_dir)
         elif type == 'list':
             assert of, Exception("--of must be specified if the query is a list.")
-            assert of in ['binners', 'assemblers', 'mappers', 'modes', 'qctools', 'targets', 'options', 'samples'], Exception('Invalid --of argument.')
+            assert of in ['binners', 'assemblers', 'refiners', 'mappers', 'modes', 'qctools', 'targets', 'options', 'samples'], Exception('Invalid --of argument.')
             if of in ['options', 'samples']:
                 assert within, Exception("Asking for a list of options or samples requires within to be specified.")
             if of not in ['options', 'samples']:
                 return print_and_return(self.config.get_list_of(of))
             elif of == 'options':
                 return print_and_return(self.config.get_options_within(within))
+            elif of == 'binner_sets':
+                return print_and_return(self.config.get_binner_sets_within(**kwargs))
             elif of == 'samples' and target:
                 return print_and_return(self.config.get_samples_within_mode(within, target))
             else:
@@ -214,29 +186,30 @@ class Project:
             raise Exception('Only "dir" and "list" are valid queries.')
 
     def run_task(
-        self, target, assembler, aopt, binner, bopt, binning_mode, 
-        mapper, mopt, map_sample, refiner, ropt, rpipe, qc, threads, force
+        self, target, assembler, aopt, mapper, mopt, map_sample, binner, bopt, binning_mode, binner_set, qctool, stage, force, threads
     ):
         """
         Generic interface to launch tasks MAG-E tasks from.
         """
         manifest = parse_manifest(self.config.manifest)
-        tsk = self.get_tasks(
+        tsk = tu.get_tasks(
             manifest, assembler, aopt, mapper, mopt, binner, bopt, 
-            binning_mode, refiner, ropt, rpipe, target
+            binning_mode, binner_set, target
         )
         if tsk.empty:
             raise Exception("No tasks fit the query.")
-        if assembler and mapper and (binner or refiner) and binning_mode:
+        if assembler and mapper and binner and binning_mode:
             if (len(tsk)!=1): raise Exception("Ambiguous. More than one task possible..")
-            if qc:
-                tu.run_quality_control(tsk, threads, force)
+            if qctool:
+                assert qctool in tsk.qctools.iloc[0]
+                tu.run_quality_control(tsk.iloc[0,:], qctool, threads, force)
             else:
-                tu.run_binning(tsk, threads, force)
-        elif assembler and mapper:
+                tu.run_binning(tsk.iloc[0,:], stage, threads, force)
+
+        elif assembler and mapper and map_sample and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','mapper','mapper_options','target']].drop_duplicates()) == 1)
-            tu.run_mapping(tsk.iloc[0,:], map_sample, threads, force)
-        elif assembler:
+            tu.run_mapping(tsk.iloc[0,:], stage, map_sample, threads, force)
+        elif assembler and not mapper and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','target']].drop_duplicates()) == 1)
             tu.run_assembly(tsk.iloc[0,:], threads, force)
 

@@ -28,7 +28,7 @@ null_map = [['MAP', 'OPT'], ['MAP', 'OPT']]
 null_mode = ['NULL', 'NULL']
 null_qc = ['NULL', 'NULL']
 null_refiner = [
-    ['REFN', 'REFN_OPT', ['ASM','ASMOPT'], [['BIN', 'BINOPT', 'MODE'], ['BIN', 'BINOPT', 'MODE']]]
+    ['REFN', 'REFN_OPT', 'ASM','ASMOPT', 'MAP', 'MAPOPT', [['BIN', 'BINOPT', 'MODE'], ['BIN', 'BINOPT', 'MODE']]]
 ]
 
 @dataclass
@@ -115,6 +115,10 @@ class Config:
             ret = ' '.join(set(self.binning_modes))
         elif k == 'mappers':
             ret = ' '.join(set(m for m,p in self.mappers))
+        elif k == 'qctools':
+            ret = ' '.join(set(self.qctools))
+        elif k == 'refiners':
+            ret = ' '.join(set(r for r,*rest in self.refiners))
         else:
             Exception('--of is invalid.')
         return ret
@@ -127,13 +131,21 @@ class Config:
             ret = '\0'.join(p for a, p in self.binners if a == tool)
         elif tool in [a for a, p in self.mappers]:
             ret = '\0'.join(p for a, p in self.mappers if a == tool)
-        elif tool in [a for a, p in self.qctools]:
-            ret = '\0'.join(p for a, p in self.qctools if a == tool)
-        elif tool in [a for a, p in self.refiners]:
-            ret = '\0'.join(p for a, p in self.refiners if a == tool)
+        elif tool in [a for a, *rest in self.refiners if a == tool]:
+            ret = '\0'.join(p for a,p, *rest in self.refiners if a == tool)
         else:
             Exception(f'{tool} is invalid.')
         return ret
+
+    def get_binner_sets_within(
+        self, refiner, refiner_option, assembler, 
+        assembler_option, mapper, mapper_option, **kwargs
+    ):
+        binner_sets = list()
+        for rf, ro, a, ao, m, mo, binner_set in self.refiners:
+            if refiner == rf and ro == refiner_option and assembler == a and assembler_option == ao and mapper == m and mapper_option == mo:
+                binner_sets.append(':'.join([','.join(b) for b in binner_set]))
+        return '\0'.join(binner_sets)
 
     def get_samples_within_mode(self, mode, target):
         assert mode in self.binning_modes, Exception("Supplied binning mode is invalid.")
