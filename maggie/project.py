@@ -12,7 +12,7 @@ from . import database as db
 from . import mirror_specs as ms
 from . import simulation as sm
 from . import evaluation as ev
-from .tasks import assembly as ab, binning as bn, quality_control as qc, task_utils as tu
+from .tasks import assembly as ab, binning as bn, quality_control as qc, mapping as mp, task_utils as tu
 from . import ground_truth as gt 
 from .utils import parse_manifest, run_R_script, parse_contig_properties, print_and_return, soft_link
 from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
@@ -185,8 +185,46 @@ class Project:
         else:
             raise Exception('Only "dir" and "list" are valid queries.')
 
+    def report(self, type, stage, to_file=False):
+        assert stage in ['prep', 'main', 'all']
+        manifest = parse_manifest(self.config.manifest)
+        records = list()
+        for idx in manifest.index:
+            tsk = manifest.loc[idx,:]
+            # other than qctools each tsk has just one tool per type
+            # but we need to account for qctools having multiple tools per task
+            tools = {
+                'assembler': [tsk.assembler],
+                'mapper': [tsk.mapper],
+                'binner': [tsk.binner],
+                'qctool': tsk.qctools
+            }[type]
+            for tool in tools:
+                o = getattr(ab, f'{tool}Assembler')() if type == 'assembler' \
+                    else getattr(mp, f'{tool}Mapper')() if type == 'mapper' \
+                    else getattr(bn, f'{tool}Binner')() if type == 'binner' \
+                    else getattr(qc, f'{tool}QCTool')()
+                done = True
+                if stage == 'prep' or stage == 'all':
+                    done &= o.prep_done(**tsk.to_dict())
+                if stage == 'main' or stage == 'all':
+                    done &= o.main_done(**tsk.to_dict())
+                if not done:
+                    path = tsk.asm_dir if type == 'assembler' else tsk.map_dir if type == 'mapper' else tsk.task_out_dir
+                    opts = tsk.assembler_options if type == 'assembler' else tsk.mapper_options if type == 'mapper' else tsk.binner_options if type == 'binner' else 'default'
+                    records.append((tool, opts, tsk.target, type, path))
+        records = pd.DataFrame(records, columns = ['tool', 'options', 'target', 'type', 'path']).drop_duplicates()
+        if to_file:
+            records.to_csv(
+                os.path.join(
+                    self.config.project_base, 'task_report.csv'
+                ), index=None
+            )
+        else:
+            print(records.to_string(), flush=True)
+            
     def run_task(
-        self, target, assembler, aopt, mapper, mopt, map_sample, binner, bopt, binning_mode, binner_set, qctool, stage, force, threads
+        self, target, assembler, aopt, mapper, mopt, map_sample, binner, bopt, binning_mode, binner_set, qctool, stage, force, threads, check
     ):
         """
         Generic interface to launch tasks MAG-E tasks from.
@@ -202,16 +240,18 @@ class Project:
             if (len(tsk)!=1): raise Exception("Ambiguous. More than one task possible..")
             if qctool:
                 assert qctool in tsk.qctools.iloc[0]
-                tu.run_quality_control(tsk.iloc[0,:], qctool, threads, force)
+                return not tu.run_quality_control(tsk.iloc[0,:], qctool, threads, force, check)
             else:
-                tu.run_binning(tsk.iloc[0,:], stage, threads, force)
+                return not tu.run_binning(tsk.iloc[0,:], stage, threads, force, check)
 
         elif assembler and mapper and map_sample and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','mapper','mapper_options','target']].drop_duplicates()) == 1)
-            tu.run_mapping(tsk.iloc[0,:], stage, map_sample, threads, force)
+            return not tu.run_mapping(tsk.iloc[0,:], stage, map_sample, threads, force, check)
         elif assembler and not mapper and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','target']].drop_duplicates()) == 1)
-            tu.run_assembly(tsk.iloc[0,:], threads, force)
+            return not tu.run_assembly(tsk.iloc[0,:], threads, force, check)
+        else:
+            raise Exception("Invalid options.")
 
     #def run_assembly(self, threads):
     #    """

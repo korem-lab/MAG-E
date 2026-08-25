@@ -58,12 +58,12 @@ class bowtie2Mapper(Mapper):
     name = 'MEGAHIT'
     exec = 'megahit'
 
-    def run_main(self, r1, r2, map_dir, target, map_sample, threads, mapper_options, **kwargs):
+    def run_main(self, r1, r2, map_dir, target, map_sample, threads, options, **kwargs):
         old_files = glob(f'{map_dir}/*.sam') + glob(f'{map_dir}/*.bam')
         for f in old_files:
             rm_file(f)
         bam = join(map_dir, f'{target}_{map_sample}.bam')
-        cmd = f'bowtie2 -p {threads} {mapper_options} -x {map_dir}/idx -1 {r1} -2 {r2} | samtools view -bS - > {bam}'
+        cmd = f'bowtie2 -p {threads} {options} -x {map_dir}/idx -1 {r1} -2 {r2} | samtools view -bS - > {bam}'
         run(cmd)
         sort_bam(bam,threads)
         index_bam(bam)

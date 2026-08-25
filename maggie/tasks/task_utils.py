@@ -141,55 +141,62 @@ def get_task_directory(self, **kwargs):
         raise Exception("More than task fits the query") 
     return tsks.iloc[0,0]
 
-def run_assembly(task, threads=8, force=False):
+def run_assembly(task, threads=8, force=False, check=False):
     r1 = join(task.simulation_dir, f'{task.target}_R1.fastq.gz')
     r2 = join(task.simulation_dir, f'{task.target}_R2.fastq.gz')
     options = '' if task.assembler_options == 'default' else task.assembler_options
     assembler = getattr(ab, f'{task.assembler}Assembler')()
-    kwargs = task.to_dict() | {'threads':threads}
+    kwargs = task.to_dict() | {'threads':threads, 'r1':r1, 'r2':r2,'options':options}
+    if check:
+        return assembler.main_done(**kwargs)
     if force or not assembler.main_done(**kwargs):
         rm_dir(task.asm_dir, remake=True)
         assembler.run_main(**kwargs)
-    assembler.clean_up(**kwargs)
-    assert assembler.done(**kwargs)
 
-def run_mapping(task, stage, map_sample, threads=8, force=False):
+def run_mapping(task, stage, map_sample, threads=8, force=False, check=False):
     assert map_sample in task.samples
     r1 = join(task.simulation_dir, f'{map_sample}_R1.fastq.gz')
     r2 = join(task.simulation_dir, f'{map_sample}_R2.fastq.gz')
+    options = '' if task.mapper_options == 'default' else task.mapper_options
     mapper = getattr(mp, f'{task.mapper}Mapper')()
-    kwargs = {'r1':r1, 'r2':r2, 'map_sample':map_sample, 'threads':threads}
+    kwargs = {'r1':r1, 'r2':r2, 'map_sample':map_sample, 'threads':threads, 'options':options}
     kwargs = task.to_dict() | kwargs
     if stage == 'prep' or stage == 'all':
+        if check:
+            return mapper.prep_done(**kwargs)
         if force or not mapper.prep_done(**kwargs):
             rm_dir(task.map_dir, remake=True)
             mapper.run_prep(**kwargs)
     if stage == 'main' or stage == 'all':
+        if check:
+            return mapper.run_main(**kwargs)
         if force or not mapper.main_done(**kwargs):
             mapper.run_main(**kwargs)
 
-    mapper.clean_up(task.map_dir)
-    assert mapper.mapping_done(task.map_dir)
-
-def run_binning(task, stage, threads=8, force=False):
+def run_binning(task, stage, threads=8, force=False, check=False):
     binner = getattr(bn, f'{task.binner}Binner')()
     kwargs = task.to_dict() | {'threads':threads}
+    options = '' if task.binner_options == 'default' else task.binner_options
     if stage == 'prep' or stage == 'all':
+        if check:
+            return binner.prep_done(**kwargs)
         if force or not binner.prep_done(**kwargs):
             rm_dir(join(task.task_out_dir, 'input'),remake=True)
             binner.run_prep(**kwargs)
     if stage == 'main' or stage == 'all':
+        if check:
+            return binner.main_done(**kwargs)
         if force or not binner.main_done(**kwargs):
             rm_dir(join(task.task_out_dir, 'output'),remake=True)
             binner.run_main(**kwargs)
 
-def run_quality_control(task, qctool, threads=8, force=False):
+def run_quality_control(task, qctool, threads=8, force=False, check=False):
     qctool = getattr(qc, f'{qctool}QCTool')()
     kwargs = task.to_dict() | {'threads':threads}
+    if check:
+        qctool.main_done(**kwargs)
     if force or not qctool.main_done(**kwargs):
         qctool.run_main(**kwargs)
-        qctool.cleanup(**kwargs)
-    assert qctool.main_done(**kwargs)
 
 #def run_quality_control(manifest, force=False, threads=8):
 #    for i in range(len(manifest)):

@@ -25,12 +25,8 @@ def printit(func):
         return None
     return wrapper
 
-@printit
-def run(cmd, print=False):
-    if print:
-        print(cmd, flush=True)
-    else:
-        _run(cmd, shell=True)
+def run(cmd):
+    _run(cmd, shell=True)
 
 def add_cmd(cmd, script):
     return script + f"\n{cmd}\n"
@@ -124,11 +120,9 @@ def compress(genomes, exe='pigz', script=None):
 def manifest_get(field, x):
     json.loads(x)[field]
 
-@printit
 def rm_file(file):
     if os.path.exists(file):
         os.remove(file)
-@printit
 def rm_dir(dir, remake=False):
     try:
         if os.path.exists(dir) and os.path.isdir(dir):

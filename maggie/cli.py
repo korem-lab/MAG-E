@@ -1,6 +1,7 @@
 import typer
 from os.path import exists, join
 from os import remove
+from sys import exit
 import pandas as pd
 from typer.core import TyperGroup
 from pathlib import Path
@@ -140,14 +141,14 @@ def query(
     type: str = typer.Argument(..., help='Either dir, list, or complete'),
     target: str = typer.Option(None, help='Target sample.'),
     assembler: str = typer.Option(None, help='An assembler in config.'),
-    assembler_option: str = typer.Option('default', help='CLI option string.'),
+    assembler_options: str = typer.Option('default', help='CLI option string.'),
     binner: str = typer.Option(None, help='A binner in config.'),
-    binner_option: str = typer.Option('default', help='CLI option string.'),
+    binner_options: str = typer.Option('default', help='CLI option string.'),
     binning_mode: str = typer.Option(None, help='Binning mode in config'),
     mapper: str = typer.Option(None, help='A mapper in config.'),
-    mapper_option: str = typer.Option('default', help='CLI option string'),
+    mapper_options: str = typer.Option('default', help='CLI option string'),
     refiner: str = typer.Option(None, help='A refiner in.'),
-    refiner_option: str = typer.Option('default', help='CLI option string'),
+    refiner_options: str = typer.Option('default', help='CLI option string'),
     binner_set: str = typer.Option(None, help='String specifying set of binners for refiners.'),
     simulations: bool = typer.Option(False, help='Return directory of simulated metagenomes.'),
     genomes: bool = typer.Option(False, help='Return the directory of db genomes.'),
@@ -164,31 +165,50 @@ def query(
     # refiners treated as binners under the hood
     if refiner:
         binner = refiner
-        binner_option = refiner_option
+        binner_options = refiner_options
         assert (binner_set)
 
     project.query(
-        type, target, of, within, simulations, genomes, evaluations, assembler, assembler_option, binner, binner_option, binning_mode, mapper, mapper_option, refiner, refiner_option, binner_set
+        type, target, of, within, simulations, genomes, evaluations, assembler=assembler, aopt=assembler_options, binner=binner, bopt=binner_options, binning_mode=binning_mode, mapper=mapper, mopt=mapper_options, binner_set=binner_set
     )
+
+@app.command()
+def task_report(
+    type: str = typer.Argument(
+        ..., help='Either: assembler, mapper, binner, refiner, or qctool.'
+        ),
+    stage: str = typer.Argument(
+        ..., help='Either: prep, main, all.'
+        ),
+    to_file: bool = typer.Option(
+        False, help='Either: prep, main, all.'
+        )
+    ):
+    _, directory = get_current_project()
+    project = Project.load(directory)
+    # refiners treated as binners under the hood
+    project.report(type, stage, to_file)
+
 
 @app.command()
 def run(
     target: str = typer.Option(None, help='Target sample.'),
     assembler: str = typer.Option(None, help='An assembler in config.'),
-    assembler_option: str = typer.Option('default', help='CLI option string.'),
+    assembler_options: str = typer.Option('default', help='CLI option string.'),
     binner: str = typer.Option(None, help='A binner in config.'),
-    binner_option: str = typer.Option('default', help='CLI option string.'),
+    binner_options: str = typer.Option('default', help='CLI option string.'),
     binning_mode: str = typer.Option(None, help='Binning mode in config'),
     mapper: str = typer.Option(None, help='A mapper in config.'),
-    mapper_option: str = typer.Option('default', help='CLI option string'),
+    mapper_options: str = typer.Option('default', help='CLI option string'),
     map_sample: str = typer.Option(None, help='The sample to map against the target assembly.'),
     refiner: str = typer.Option(None, help='A refiner in.'),
-    refiner_option: str = typer.Option('default', help='CLI option string'),
+    refiner_options: str = typer.Option('default', help='CLI option string'),
     binner_set: str = typer.Option(None, help='String specifying the binner set for refiners.'),
     qctool: str = typer.Option(None, help='A quality control tool in the config'),
     stage: str = typer.Option(None, help='Either prep, main, or all.'),
     force: bool = typer.Option(False, help='Force run the stage.'),
-    threads: int  = typer.Option(8, help='Number of threads to launch tasks with')
+    threads: int  = typer.Option(8, help='Number of threads to launch tasks with'),
+    check_done: bool = typer.Option(False, help='Check whether task done.')
 ):
     _, directory = get_current_project()
     project = Project.load(directory)
@@ -196,12 +216,13 @@ def run(
     # Internally, refiners just get treated like binners
     if refiner:
         binner = refiner
-        binner_option = refiner_option
+        binner_options = refiner_options
         assert (binner_set)
     if stage is None:
         stage = 'all'
     assert stage in ['all', 'main', 'prep']
-    project.run_task(target, assembler, assembler_option, mapper, mapper_option, map_sample, binner, binner_option, binning_mode, binner_set, qctool, stage, force, threads)
+    ret_code = project.run_task(target, assembler, assembler_options, mapper, mapper_options, map_sample, binner, binner_options, binning_mode, binner_set, qctool, stage, force, threads, check_done)
+    exit(ret_code)
 
 
 #@app.command()

@@ -49,6 +49,9 @@ class CheckM2QCTool(QCTool):
         res.rename({f'{self.name}_bin':'bin'},axis=1,inplace=True)
         return res
 
+    def prep_done(self, **kwargs):
+        return True
+
     def main_done(self, task_out_dir, **kwargs):
         results_dir = join(task_out_dir, f'output/{self.name}')
         return not_empty(join(results_dir, 'quality_report.tsv'))
@@ -74,6 +77,9 @@ class GUNCQCTool(QCTool):
         res = res.add_prefix(f'{self.name}_')
         res.rename({f'{self.name}_bin':'bin'},axis=1,inplace=True)
         return res
+
+    def prep_done(self, **kwargs):
+        return True
 
     def main_done(self, task_out_dir, **kwargs):
         results_dir = join(task_out_dir, f'output/{self.name}')
