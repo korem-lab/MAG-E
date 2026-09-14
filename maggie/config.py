@@ -24,11 +24,11 @@ def make_dict(data):
 null = 'NULL'
 null_asm = [['ASM', 'OPT'], ['ASM', 'OPT']]
 null_bin = [['BIN', 'OPT'], ['BIN', 'OPT']]
-null_map = [['MAP', 'OPT'], ['MAP', 'OPT']]
+null_cov = [['COV', 'OPT'], ['COV', 'OPT']]
 null_mode = ['NULL', 'NULL']
 null_qc = ['NULL', 'NULL']
 null_refiner = [
-    ['REFN', 'REFN_OPT', 'ASM','ASMOPT', 'MAP', 'MAPOPT', [['BIN', 'BINOPT', 'MODE'], ['BIN', 'BINOPT', 'MODE']]]
+    ['REFN', 'REFN_OPT', 'ASM','ASMOPT', 'COV', 'COVOPT', [['BIN', 'BINOPT', 'MODE'], ['BIN', 'BINOPT', 'MODE']]]
 ]
 
 @dataclass
@@ -43,7 +43,7 @@ class Config:
     ecosystem_db: str = null
     assemblers: list = field(default_factory=lambda: null_asm)
     binners: list = field(default_factory=lambda: null_bin)
-    mappers: list = field(default_factory=lambda: null_map)
+    coverage: list = field(default_factory=lambda: null_cov)
     binning_modes: list =  field(default_factory=lambda: null_mode)
     refiners: list = field(default_factory=lambda: null_refiner)
     qctools: list = field(default_factory=lambda: null_qc)
@@ -95,11 +95,10 @@ class Config:
             for q in self.qctools:
                 assert hasattr(quality_control, q+'QCTool')
 
-
         self.assemblers = [tupleize(e) for e in self.assemblers]
         self.binners = [tupleize(e) for e in self.binners]
         self.refiners = [tupleize(e) for e in self.refiners]
-        self.mappers = [tupleize(e) for e in self.mappers]
+        self.coverage = [tupleize(e) for e in self.coverage]
 
     def get_list_of(self, k):
         ret = ''
@@ -111,10 +110,10 @@ class Config:
             ret = ' '.join(set(a for a,p in self.assemblers))
         elif k == 'binners':
             ret = ' '.join(set(b for b,p in self.binners))
+        elif k == 'coverage':
+            ret = ' '.join(set(b for b,p in self.coverage))
         elif k == 'modes':
             ret = ' '.join(set(self.binning_modes))
-        elif k == 'mappers':
-            ret = ' '.join(set(m for m,p in self.mappers))
         elif k == 'qctools':
             ret = ' '.join(set(self.qctools))
         elif k == 'refiners':
@@ -129,8 +128,8 @@ class Config:
             ret = '\0'.join(p for a, p in self.assemblers if a == tool)
         elif tool in [a for a, p in self.binners]:
             ret = '\0'.join(p for a, p in self.binners if a == tool)
-        elif tool in [a for a, p in self.mappers]:
-            ret = '\0'.join(p for a, p in self.mappers if a == tool)
+        elif tool in [a for a, p in self.coverage]:
+            ret = '\0'.join(p for a, p in self.coverage if a == tool)
         elif tool in [a for a, *rest in self.refiners if a == tool]:
             ret = '\0'.join(p for a,p, *rest in self.refiners if a == tool)
         else:
@@ -139,11 +138,11 @@ class Config:
 
     def get_binner_sets_within(
         self, refiner, refiner_option, assembler, 
-        assembler_option, mapper, mapper_option, **kwargs
+        assembler_option, coverage, coverage_option, **kwargs
     ):
         binner_sets = list()
-        for rf, ro, a, ao, m, mo, binner_set in self.refiners:
-            if refiner == rf and ro == refiner_option and assembler == a and assembler_option == ao and mapper == m and mapper_option == mo:
+        for rf, ro, a, ao, c, co, binner_set in self.refiners:
+            if refiner == rf and ro == refiner_option and assembler == a and assembler_option == ao and coverage == c and coverage_option == co:
                 binner_sets.append(':'.join([','.join(b) for b in binner_set]))
         return '\0'.join(binner_sets)
 
@@ -180,8 +179,8 @@ class Config:
         return join(self.project_base, 'assembly_cache')
 
     @property
-    def mapping_cache(self):
-        return join(self.project_base, 'mapping_cache')
+    def coverage_cache(self):
+        return join(self.project_base, 'coverage_cache')
 
     @property
     def bintask_dir(self):

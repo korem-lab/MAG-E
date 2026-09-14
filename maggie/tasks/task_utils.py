@@ -6,7 +6,7 @@ from itertools import product
 from collections import defaultdict
 import json
 from ..utils import parse_binning_mode_datasets, rm_dir, get_contig_name, remove_fasta_ext, flatten, run
-from . import assembly as ab, binning as bn, quality_control as qc, mapping as mp
+from . import assembly as ab, binning as bn, quality_control as qc, coverage as cv 
 
 
 def get_summary_names(data, is_refiner=False):
@@ -42,13 +42,13 @@ def make_ids(l):
     return ids
 
 def make_manifest(
-    assemblers, mappers, binners, modes, refiners, qctools, simulation_dir, 
-    assembly_cache, mapping_cache, bintask_dir, project_base
+    assemblers, coverage, binners, modes, refiners, qctools, simulation_dir, 
+    assembly_cache, coverage_cache, bintask_dir, project_base
 ):
     # The same tool can be provided, but with different options. 
     # Mapping each (tool, option) pair to a numerical id gives a simple naming scheme
     aids = make_ids(assemblers)
-    mids = make_ids(mappers)
+    mids = make_ids(coverage)
     bids = make_ids(binners)
     id_to_string = lambda ids, t, o: f'({ids[t][o]})' if len(ids[t])>1 else ""
 
@@ -57,7 +57,7 @@ def make_manifest(
     asmcache_id = id_gen()
     mapcache_id = id_gen()
     tasks = list()
-    for (ab, abo), (mp, mpo), (bn, bno), mode in product(assemblers, mappers, binners, modes):
+    for (ab, abo), (mp, mpo), (bn, bno), mode in product(assemblers, coverage, binners, modes):
 
         asm_num = asmcache_id[(ab, abo)]
         map_num = mapcache_id[(ab, abo, mp, mpo)]
@@ -65,7 +65,7 @@ def make_manifest(
         spec = {
             'simulation_dir': simulation_dir,
             'assembler': ab, 'assembler_options': abo, 'binner': bn, 'binner_options': bno,
-            'mapper': mp, 'mapper_options': mpo,
+            'coverage': mp, 'coverage_options': mpo,
             'binning_mode': mode, 'qctools': qctools,
             'is_refiner': False
         }
@@ -73,7 +73,7 @@ def make_manifest(
         # get the summary names for the binning runs
         spec['assembler_summary_name'] = id_to_string(aids, ab, abo)
         spec['binner_summary_name'] = id_to_string(bids, bn, bno)
-        spec['mapping_summary_name'] = id_to_string(mids, mp, mpo)
+        spec['coverage_summary_name'] = id_to_string(mids, mp, mpo)
 
         datasets = parse_binning_mode_datasets(join(project_base, f'{mode}_datasets.csv'))
         for trgt, df in datasets.groupby('target'):
@@ -81,7 +81,7 @@ def make_manifest(
             spec['samples'] = [trgt] + sorted(list(set(df.dataset.to_list()) - {trgt}))
             spec['task_out_dir'] = join(bintask_dir, f'bin_task_{bin_task_num}', trgt)
             spec['asm_dir'] = join(assembly_cache, f'assembly_task_{asm_num}', trgt)
-            spec['map_dir'] = join(mapping_cache, f'mapping_task_{map_num}', trgt)
+            spec['cov_dir'] = join(coverage_cache, f'coverage_task_{map_num}', trgt)
             tasks.append(spec.copy())
 
     # Refiners will be considered just another binner.
@@ -94,7 +94,7 @@ def make_manifest(
         spec = {
             'simulation_dir': simulation_dir,
             'assembler': ab, 'assembler_options': abo, 'binner': rf, 'binner_options': ro,
-            'mapper': mp, 'mapper_options': mpo, 'binner_set': binner_set, 'is_refiner':True,
+            'coverage': mp, 'coverage_options': mpo, 'binner_set': binner_set, 'is_refiner':True,
             'qctools': qctools
         }
         spec['binner_summary_name'] = id_to_string(bids, rf, ro+' '.join(flatten(binner_set)))
@@ -104,14 +104,14 @@ def make_manifest(
             spec['task_out_dir'] = join(bintask_dir, f'bin_task_{bin_task_num}', trgt)
             spec['asm_dir'] = join(assembly_cache, f'assembly_task_{asm_num}', trgt)
             tasks.append(spec.copy())
-            spec['map_dir'] = join(mapping_cache, f'mapping_task_{map_num}', trgt)
+            spec['cov_dir'] = join(coverage_cache, f'coverage_task_{map_num}', trgt)
     for spec in tasks:
         spec['task_name'] = hashlib.sha256(json.dumps(spec).encode()).hexdigest()
     tasks = pd.DataFrame(tasks)
     return tasks
 
 def get_tasks(
-        manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, binner_set, target, map_sample
+        manifest, assembler, aopt, coverage, copt, binner, bopt, binning_mode, binner_set, target, cov_sample
     ):
     flt = lambda x,y: manifest[x] == y if y is not None else pd.Series(True, index=manifest.index)
     ms_flt = lambda ms: manifest.samples.apply(lambda x: ms in x) if ms is not None else pd.Series(True, index=manifest.index)
@@ -119,19 +119,19 @@ def get_tasks(
         binner_set = tuple(tuple(e.split(',')) for e in binner_set.split(':'))
     return manifest.loc[
         flt('target', target) & flt('assembler', assembler) & flt('assembler_options', aopt) &
-        flt('mapper', mapper) & flt('mapper_options', mopt) & flt('binner', binner) & 
+        flt('coverage', coverage) & flt('coverage_options', copt) & flt('binner', binner) & 
         flt('binner_options', bopt) & flt('binning_mode', binning_mode) &
-        flt('binner_set', binner_set) & ms_flt(map_sample)
+        flt('binner_set', binner_set) & ms_flt(cov_sample)
     ]
 
 def get_task_directory(**kwargs):
-    tsks = get_tasks(map_sample=None, **kwargs)
-    assembler, mapper, binner = kwargs['assembler'], kwargs['mapper'], kwargs['binner']
+    tsks = get_tasks(cov_sample=None, **kwargs)
+    assembler, coverage, binner = kwargs['assembler'], kwargs['coverage'], kwargs['binner']
     binning_mode, target = kwargs['binning_mode'], kwargs['target']
-    if assembler and mapper and binner and binning_mode and target:
+    if assembler and coverage and binner and binning_mode and target:
         tsks = tsks[['task_out_dir']].drop_duplicates()
-    elif assembler and mapper and target:
-        tsks = tsks[['map_dir']].drop_duplicates()
+    elif assembler and coverage and target:
+        tsks = tsks[['cov_dir']].drop_duplicates()
     elif assembler and target:
         tsks = tsks[['asm_dir']].drop_duplicates()
     else:
@@ -154,26 +154,26 @@ def run_assembly(task, threads=8, force=False, check=False):
         rm_dir(task.asm_dir, remake=True)
         assembler.run_main(**kwargs)
 
-def run_mapping(task, stage, map_sample, threads=8, force=False, check=False):
-    if map_sample is not None:
-        assert map_sample in task.samples
-    r1 = join(task.simulation_dir, f'{map_sample}_R1.fastq.gz')
-    r2 = join(task.simulation_dir, f'{map_sample}_R2.fastq.gz')
-    options = '' if task.mapper_options == 'default' else task.mapper_options
-    mapper = getattr(mp, f'{task.mapper}Mapper')()
-    kwargs = {'r1':r1, 'r2':r2, 'map_sample':map_sample, 'threads':threads, 'options':options}
+def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False):
+    if cov_sample is not None:
+        assert cov_sample in task.samples
+    r1 = join(task.simulation_dir, f'{cov_sample}_R1.fastq.gz')
+    r2 = join(task.simulation_dir, f'{cov_sample}_R2.fastq.gz')
+    options = '' if task.coverage_options == 'default' else task.coverage_options
+    coverage = getattr(cv, f'{task.coverage}Coverage')()
+    kwargs = {'r1':r1, 'r2':r2, 'cov_sample':cov_sample, 'threads':threads, 'options':options}
     kwargs = task.to_dict() | kwargs
     if check:
-        ckp = mapper.prep_done(**kwargs)
-        ckm = mapper.main_done(**kwargs)
+        ckp = coverage.prep_done(**kwargs)
+        ckm = coverage.main_done(**kwargs)
         return ckp if stage == 'prep' else ckm if stage == 'main' else (ckp and ckm)
     if stage == 'prep' or stage == 'all':
-        if force or not mapper.prep_done(**kwargs):
-            rm_dir(task.map_dir, remake=True)
-            mapper.run_prep(**kwargs)
+        if force or not coverage.prep_done(**kwargs):
+            rm_dir(task.cov_dir, remake=True)
+            coverage.run_prep(**kwargs)
     if stage == 'main' or stage == 'all':
-        if force or not mapper.main_done(**kwargs):
-            mapper.run_main(**kwargs)
+        if force or not coverage.main_done(**kwargs):
+            coverage.run_main(**kwargs)
 
 def run_binning(task, stage, threads=8, force=False, check=False):
     binner = getattr(bn, f'{task.binner}Binner')()
@@ -215,33 +215,6 @@ def run_quality_control(task, qctool, threads=8, force=False, check=False):
 #            qc_table['task_name'] = t.task_name
 #            qc_table.to_csv(join(t.task_out_dir, 'output/qc_table.csv'), index=None)
 
-#def run_mappings(manifest, stage='all', threads=8):
-#    map_tasks = manifest[['target', 'simulation_dir', 'asm_dir', 'map_dir','mapper', 'mapper_options', 'samples']].drop_duplicates()
-#    for i in range(len(map_tasks)):
-#        t = map_tasks.iloc[i,:]
-#        for s in t.samples:
-#            run_mapping(t, stage, map_sample=s, threads=threads)
-
-#def run_assemblies(manifest, threads=8):
-#    asm_tasks = manifest[~manifest.is_refiner][['target', 'simulation_dir', 'asm_dir', 'assembler', 'assembler_options']].drop_duplicates()
-#    print('Total assembly tasks: ', len(asm_tasks))
-#    for i in range(len(asm_tasks)):
-#        run_assembly(asm_tasks.iloc[i,:], threads)
-
-#def run_binnings(manifest, run_only=None, force_prep=False, force_bin=False, threads=8):
-#    # run prep
-#    bin_tasks = manifest[~manifest.is_refiner]
-#    if run_only is None or run_only == 'prep':
-#        for i in range(len(bin_tasks)):
-#            t = bin_tasks.iloc[i,:]
-#            if force_prep or not task_done(t, 'prep', clear=True):
-#                run_prep(t, threads)
-#    # run bin
-#    if run_only is None or run_only == 'bin':
-#        for i in range(len(bin_tasks)):
-#            t = bin_tasks.iloc[i,:]
-#            if force_bin or not task_done(t, 'bin', clear=True):
-#                run_bin(t, threads)
 #
 #def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
 #    refine_tasks = manifest[manifest.is_refiner] 

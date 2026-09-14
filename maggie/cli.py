@@ -156,8 +156,8 @@ def query(
     binner: str = typer.Option(None, help='A binner in config.'),
     binner_options: str = typer.Option('default', help='CLI option string.'),
     binning_mode: str = typer.Option(None, help='Binning mode in config'),
-    mapper: str = typer.Option(None, help='A mapper in config.'),
-    mapper_options: str = typer.Option('default', help='CLI option string'),
+    coverage: str = typer.Option(None, help='A coverage in config.'),
+    coverage_options: str = typer.Option('default', help='CLI option string'),
     refiner: str = typer.Option(None, help='A refiner in.'),
     refiner_options: str = typer.Option('default', help='CLI option string'),
     binner_set: str = typer.Option(None, help='String specifying set of binners for refiners.'),
@@ -180,13 +180,13 @@ def query(
         assert (binner_set)
 
     project.query(
-        type, target, of, within, simulations, genomes, evaluations, assembler=assembler, aopt=assembler_options, binner=binner, bopt=binner_options, binning_mode=binning_mode, mapper=mapper, mopt=mapper_options, binner_set=binner_set
+        type, target, of, within, simulations, genomes, evaluations, assembler=assembler, aopt=assembler_options, binner=binner, bopt=binner_options, binning_mode=binning_mode, coverage=coverage, copt=coverage_options, binner_set=binner_set
     )
 
 @app.command()
 def task_report(
     type: str = typer.Argument(
-        ..., help='Either: assembler, mapper, binner, refiner, or qctool.'
+        ..., help='Either: assembler, coverage, binner, refiner, or qctool.'
         ),
     stage: str = typer.Argument(
         ..., help='Either: prep, main, all.'
@@ -213,9 +213,9 @@ def run(
     binner: str = typer.Option(None, help='A binner in config.'),
     binner_options: str = typer.Option('default', help='CLI option string.'),
     binning_mode: str = typer.Option(None, help='Binning mode in config'),
-    mapper: str = typer.Option(None, help='A mapper in config.'),
-    mapper_options: str = typer.Option('default', help='CLI option string'),
-    map_sample: str = typer.Option(None, help='The sample to map against the target assembly.'),
+    coverage: str = typer.Option(None, help='A coverage in config.'),
+    coverage_options: str = typer.Option('default', help='CLI option string'),
+    cov_sample: str = typer.Option(None, help='The sample to calculate coverage against the target assembly.'),
     refiner: str = typer.Option(None, help='A refiner in.'),
     refiner_options: str = typer.Option('default', help='CLI option string'),
     binner_set: str = typer.Option(None, help='String specifying the binner set for refiners.'),
@@ -237,48 +237,11 @@ def run(
         stage = 'all'
     assert stage in ['all', 'main', 'prep']
     ret_code = project.run_task(
-        target, assembler, assembler_options, mapper, mapper_options, map_sample, binner, binner_options, binning_mode, binner_set, qctool, stage, force, threads, check_done
+        target, assembler, assembler_options, coverage, coverage_options, cov_sample, binner, binner_options, binning_mode, binner_set, qctool, stage, force, threads, check_done
     )
     exit(ret_code)
 
 
-#@app.command()
-#def run_assembly(
-#    threads: int = typer.Option(8, help='Threads to assemblers')
-#):
-#    """
-#    Runs assembly tasks.
-#    """
-#    _, directory = get_current_project()
-#    project = Project.load(directory)
-#    project.run_assembly(threads)
-#
-#@app.command()
-#def run_mapping(
-#    threads: int = typer.Option(8, help='Threads to assemblers')
-#):
-#    """
-#    Runs assembly tasks.
-#    """
-#    _, directory = get_current_project()
-#    project = Project.load(directory)
-#    project.run_mapping(threads)
-
-#@app.command()
-#def run_binning(
-#    threads: int = typer.Option(8, help='Number of threads to run each binning task.'),
-#    run_only: str = typer.Option(None, help='Run prep or binning only.'),
-#    force_bin_prep: bool = typer.Option(False, help='Will force rerun the prep.'),
-#    force_bin: bool = typer.Option(False, help='Will force rerun the binning.'),
-#    force_refine: bool = typer.Option(False, help='Will force rerun refining.')
-#):
-#    """
-#    Runs binning and refiners.
-#    """
-#    _, directory = get_current_project()
-#    project = Project.load(directory)
-#    project.run_binning(run_only, force_bin_prep, force_bin, threads)
-#    project.run_refine(run_only, force_refine, threads)
 
 #@app.command()
 #def run_quality_control(
