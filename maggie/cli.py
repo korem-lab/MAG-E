@@ -41,10 +41,14 @@ def set_project_to_current(name):
     df.loc[current_idx.item(), 'is_current'] = True
     df.to_csv(cache_name, sep='\t', index=None)
 
-def get_current_project():
+def get_current_project(
+        all=False
+):
     MAGE_dir = Path(__file__).parent.parent
     cache_name = join(MAGE_dir, '.project_cache.tsv')
     df = pd.read_csv(cache_name, sep='\t')
+    if all:
+        return df.name, df.directory
     return df[df.is_current].name.item(), df[df.is_current].directory.item()
 
 @app.command()
@@ -60,13 +64,20 @@ def initialize_project(
     set_project_to_current(name)
 
 @app.command()
-def get_current():
+def get_project(
+    all: bool = typer.Option(False, help='List all projects')
+):
     "Prints the name and path of the project currently operating on."
-    name, dir = get_current_project()
-    print(f'{name}\t{dir}', flush=True)
+    names, dirs = get_current_project(all)
+    if all:
+        for name, dir in zip(names, dirs):
+            print(f'{name}\t{dir}', flush=True)
+    else:
+        print(f'{names}\t{dirs}', flush=True)
+
 
 @app.command()
-def set_current(
+def set_project(
     name: str = typer.Argument(..., help="MAG-E will operate on this project.")
 ):
     "Changes the current project to the one specified."
@@ -138,7 +149,7 @@ def construct_tasks(
 
 @app.command()
 def query(
-    type: str = typer.Argument(..., help='Either dir, list, or complete'),
+    type: str = typer.Argument(..., help='Either dir, list'),
     target: str = typer.Option(None, help='Target sample.'),
     assembler: str = typer.Option(None, help='An assembler in config.'),
     assembler_options: str = typer.Option('default', help='CLI option string.'),
@@ -180,14 +191,18 @@ def task_report(
     stage: str = typer.Argument(
         ..., help='Either: prep, main, all.'
         ),
+    tool : str = typer.Option(
+        None, help='Either: a particular tool.'
+        ),
     to_file: bool = typer.Option(
         False, help='Either: prep, main, all.'
         )
     ):
     _, directory = get_current_project()
+    print(directory)
     project = Project.load(directory)
     # refiners treated as binners under the hood
-    project.report(type, stage, to_file)
+    project.report(type, stage, tool, to_file)
 
 
 @app.command()
@@ -221,7 +236,9 @@ def run(
     if stage is None:
         stage = 'all'
     assert stage in ['all', 'main', 'prep']
-    ret_code = project.run_task(target, assembler, assembler_options, mapper, mapper_options, map_sample, binner, binner_options, binning_mode, binner_set, qctool, stage, force, threads, check_done)
+    ret_code = project.run_task(
+        target, assembler, assembler_options, mapper, mapper_options, map_sample, binner, binner_options, binning_mode, binner_set, qctool, stage, force, threads, check_done
+    )
     exit(ret_code)
 
 

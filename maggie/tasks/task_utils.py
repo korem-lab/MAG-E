@@ -111,28 +111,29 @@ def make_manifest(
     return tasks
 
 def get_tasks(
-        manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, binner_set, target
+        manifest, assembler, aopt, mapper, mopt, binner, bopt, binning_mode, binner_set, target, map_sample
     ):
     flt = lambda x,y: manifest[x] == y if y is not None else pd.Series(True, index=manifest.index)
+    ms_flt = lambda ms: manifest.samples.apply(lambda x: ms in x) if ms is not None else pd.Series(True, index=manifest.index)
     if binner_set:
         binner_set = tuple(tuple(e.split(',')) for e in binner_set.split(':'))
     return manifest.loc[
         flt('target', target) & flt('assembler', assembler) & flt('assembler_options', aopt) &
         flt('mapper', mapper) & flt('mapper_options', mopt) & flt('binner', binner) & 
         flt('binner_options', bopt) & flt('binning_mode', binning_mode) &
-        flt('binner_set', binner_set)
+        flt('binner_set', binner_set) & ms_flt(map_sample)
     ]
 
-def get_task_directory(self, **kwargs):
-    tsks = self.get_tasks(**kwargs)
+def get_task_directory(**kwargs):
+    tsks = get_tasks(map_sample=None, **kwargs)
     assembler, mapper, binner = kwargs['assembler'], kwargs['mapper'], kwargs['binner']
     binning_mode, target = kwargs['binning_mode'], kwargs['target']
     if assembler and mapper and binner and binning_mode and target:
-        tsks[['task_out_dir']].drop_duplicates()
+        tsks = tsks[['task_out_dir']].drop_duplicates()
     elif assembler and mapper and target:
-        tsks[['map_dir']].drop_duplicates()
+        tsks = tsks[['map_dir']].drop_duplicates()
     elif assembler and target:
-        tsks[['asm_dir']].drop_duplicates()
+        tsks = tsks[['asm_dir']].drop_duplicates()
     else:
         Exception("Invalid query.")
     if tsks.empty:
@@ -154,40 +155,40 @@ def run_assembly(task, threads=8, force=False, check=False):
         assembler.run_main(**kwargs)
 
 def run_mapping(task, stage, map_sample, threads=8, force=False, check=False):
-    assert map_sample in task.samples
+    if map_sample is not None:
+        assert map_sample in task.samples
     r1 = join(task.simulation_dir, f'{map_sample}_R1.fastq.gz')
     r2 = join(task.simulation_dir, f'{map_sample}_R2.fastq.gz')
     options = '' if task.mapper_options == 'default' else task.mapper_options
     mapper = getattr(mp, f'{task.mapper}Mapper')()
     kwargs = {'r1':r1, 'r2':r2, 'map_sample':map_sample, 'threads':threads, 'options':options}
     kwargs = task.to_dict() | kwargs
+    if check:
+        ckp = mapper.prep_done(**kwargs)
+        ckm = mapper.main_done(**kwargs)
+        return ckp if stage == 'prep' else ckm if stage == 'main' else (ckp and ckm)
     if stage == 'prep' or stage == 'all':
-        if check:
-            return mapper.prep_done(**kwargs)
         if force or not mapper.prep_done(**kwargs):
             rm_dir(task.map_dir, remake=True)
             mapper.run_prep(**kwargs)
     if stage == 'main' or stage == 'all':
-        if check:
-            return mapper.run_main(**kwargs)
         if force or not mapper.main_done(**kwargs):
             mapper.run_main(**kwargs)
 
 def run_binning(task, stage, threads=8, force=False, check=False):
     binner = getattr(bn, f'{task.binner}Binner')()
-    kwargs = task.to_dict() | {'threads':threads}
     options = '' if task.binner_options == 'default' else task.binner_options
+    kwargs = task.to_dict() | {'threads':threads, 'options':options}
+    if check:
+        ckp = binner.prep_done(**kwargs)
+        ckm = binner.main_done(**kwargs)
+        return ckp if stage == 'prep' else ckm if stage == 'main' else (ckp and ckm)
     if stage == 'prep' or stage == 'all':
-        if check:
-            return binner.prep_done(**kwargs)
         if force or not binner.prep_done(**kwargs):
             rm_dir(join(task.task_out_dir, 'input'),remake=True)
             binner.run_prep(**kwargs)
     if stage == 'main' or stage == 'all':
-        if check:
-            return binner.main_done(**kwargs)
         if force or not binner.main_done(**kwargs):
-            rm_dir(join(task.task_out_dir, 'output'),remake=True)
             binner.run_main(**kwargs)
 
 def run_quality_control(task, qctool, threads=8, force=False, check=False):

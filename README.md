@@ -41,8 +41,8 @@ project_name: myproject
 assemblers: [[ASM, OPT], [ASM, OPT]]
 binners: [[BIN, OPT], [BIN, OPT]]
 binning_modes: [MODE, MODE]
-cluster_assignments: 'NULL'
 genomes_dir: 'NULL'
+maggie_db_dir: 'NULL'
 prefix1: 'NULL'
 qctools: ['NULL', 'NULL']
 read_counts: 'NULL'
@@ -54,7 +54,6 @@ use_api: 'yes'
 Three fields are already populated: the project base, project name, and the `use_api` flag, which set to `yes`. This flag specifies how the bins from each pipeline will be provided to MAG-E in order for it to run evaluations (See "Constructing bins for evaluation").
 
 We must now populate the `config.yaml` with the following required inputs:
-- `genomes_dir`: Absolute path to directory containing genomes that will form the MAG-E database. Each genome must be in a separate gzipped fasta file (`<genome>.fasta.gz`), where `<genome>` is the genome name. In the genome files, contig headers must have the format `><genome>_<n>`, where `n` is a unique number (e.g `>genomeA_1`, `>genomeA_2`, ...).
 
 - `samples_dir`: Absolute path to directory containing all gzipped fastq files (prefix `.fastq.gz`). Paired end data is expected. 
 
@@ -66,16 +65,18 @@ sample,count
 SampleA,10000
 ...
 ```
+- `ecosystem_db`: Absolute path to a directory which contains the genomes and genome-cluster information MAG-E uses to simulate metagenomes. See (Constructing ecosystem-specific databases for details of what needs to be in the directory). It must contain: 
+    - `genomes`: A directory of genomes MAG-E uses for metagenomic simulation. Each genome must be a separate gzipped fasta file (`<genome>.fasta.gz`), where `<genome>` is the genome name. Contig headers must have the format `><genome>_<n>`, where `n` is a unique number (e.g `>genomeA_1`, `>genomeA_2`, ...).
 
-- `cluster_assignments`: The name a csv, specifying the species-level cluster assignments of each genome in `genomes_dir`. Like `read_counts` it must also be moved into the project directory. There are five required fields: `genome`, `SpeciesRepr`, `GenomeType` `N50`, and `Length`. `genome` is the name of a genome, whose file must exist at `genomes_dir/<genome>.fasta.gz`. `SpeciesRepr` lists the species-level cluster identifier for each genome. The `SpeciesRepr` values must themselves be genomes present in the `genome` columns, as they also define which genome in the species is the cluster representative. `N50` is the N50 of each genome fasta, and `Length` is the base pair length of the genome. Finally, `GenomeType` specifies whether the genome is a metagenome-assembled genome or sequenced as an isolate. It can take the values `MAG` or `Isolate`. MAG-E will only evaluate performance against `Isolate` genomes. An example of the structure for the `cluster_assignments` csv is as follows:
-```
-genome,SpeciesRepr,GenomeType,N50,Length
-genomeA,genomeA,Isolate,25000,4000000
-genomeB,genomeA,MAG,5000,1000000
-genomeC,genomeA,Isolate,100000,2000000
-genomeD,genomeD,Isolate,80000,2000000
-```
-To clarify the above descriptions, genomes A-C are in the same species cluster, with A being the representative.
+    - `cluster_assignments.csv`: Each record of this csv specifies the species-level cluster assignments of each genome in `genomes_dir`. Five required fields: `genome`, `SpeciesRepr`, `GenomeType` `N50`, and `Length`. `genome` is a genome's name, whose file must exist at `<ecosystem_db>/genomes/<genome>.fasta.gz`. `SpeciesRepr` is the representative genome of the cluster this genome belongs to. `SpeciesRepr` is used as the species-level cluster identifier.  `N50` is the N50 of each genome fasta, and `Length` is the base pair length of the genome. `GenomeType` specifies whether the genome is a metagenome-assembled genome or sequenced as an isolate. It can take the values `MAG` or `Isolate`. MAG-E will only evaluate performance against `Isolate` genomes. An example of the structure for the `cluster_assignments` csv is as follows:
+        ```
+        genome,SpeciesRepr,GenomeType,N50,Length
+        genomeA,genomeA,Isolate,25000,4000000
+        genomeB,genomeA,MAG,5000,1000000
+        genomeC,genomeA,Isolate,100000,2000000
+        genomeD,genomeD,Isolate,80000,2000000
+        ```
+    Genomes A-C are in the same species cluster, with A being the representative. 
 
 ### Configuring MAG-E - specifying pipelines
 

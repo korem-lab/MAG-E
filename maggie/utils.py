@@ -31,8 +31,11 @@ def run(cmd):
 def add_cmd(cmd, script):
     return script + f"\n{cmd}\n"
 
+def move(src, dest):
+    shutil.move(src, dest)
+
 def soft_link(src, dst):
-    run(f'ln -f -s {src} {dst}', shell=True)
+    run(f'ln -f -s {src} {dst}')
 
 def print_and_return(s):
     print(s,flush=True,end='')

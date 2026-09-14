@@ -185,7 +185,7 @@ class Project:
         else:
             raise Exception('Only "dir" and "list" are valid queries.')
 
-    def report(self, type, stage, to_file=False):
+    def report(self, type, stage, _tool, to_file=False):
         assert stage in ['prep', 'main', 'all']
         manifest = parse_manifest(self.config.manifest)
         records = list()
@@ -200,6 +200,8 @@ class Project:
                 'qctool': tsk.qctools
             }[type]
             for tool in tools:
+                if _tool is not None and tool != _tool:
+                    continue
                 o = getattr(ab, f'{tool}Assembler')() if type == 'assembler' \
                     else getattr(mp, f'{tool}Mapper')() if type == 'mapper' \
                     else getattr(bn, f'{tool}Binner')() if type == 'binner' \
@@ -232,7 +234,7 @@ class Project:
         manifest = parse_manifest(self.config.manifest)
         tsk = tu.get_tasks(
             manifest, assembler, aopt, mapper, mopt, binner, bopt, 
-            binning_mode, binner_set, target
+            binning_mode, binner_set, target, map_sample
         )
         if tsk.empty:
             raise Exception("No tasks fit the query.")
@@ -244,7 +246,7 @@ class Project:
             else:
                 return not tu.run_binning(tsk.iloc[0,:], stage, threads, force, check)
 
-        elif assembler and mapper and map_sample and not binner and not qctool:
+        elif assembler and mapper and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','mapper','mapper_options','target']].drop_duplicates()) == 1)
             return not tu.run_mapping(tsk.iloc[0,:], stage, map_sample, threads, force, check)
         elif assembler and not mapper and not binner and not qctool:

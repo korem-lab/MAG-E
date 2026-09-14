@@ -150,7 +150,7 @@ class Config:
     def get_samples_within_mode(self, mode, target):
         assert mode in self.binning_modes, Exception("Supplied binning mode is invalid.")
         df = pd.read_csv(os.path.join(self.project_base, f'{mode}_datasets.csv'))
-        return ' '.join(df.loc[df.target_sample == target].dataset.values)
+        return ' '.join(df.loc[df.target == target].dataset.values)
 
     @property
     def ecosystem_db_metadata(self):
