@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 import pandas as pd
 from os import makedirs, rename
 from os.path import join, exists, abspath, splitext, basename, dirname
-from ..utils import not_empty, soft_link, rm_dir, run, rm_file, move
+from ..utils import not_empty, soft_link, rm_dir, run
+from . import abundance as ab
 import glob
 
 def clear_prep(task_out_dir):
@@ -51,12 +52,6 @@ def task_done(bntsk, stage='all', report=False, only_not_done=False, clear=False
             return bin_done
 
     return prep_done and bin_done
-
-def jgi_summarize(bams, filename):
-    log = splitext(filename)[0] + '.log'
-    if exists(filename):
-        return
-    run(f'jgi_summarize_bam_contig_depths --outputDepth {filename} {bams} 2> {log}')
 
 def bin_done(bin_dir):
     bins = glob.glob(f'{bin_dir}/*.fasta')
@@ -177,8 +172,8 @@ class METABAT2Binner(Binner):
         target_sample = samples[0]
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
         softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
-        bams = ' '.join([join(map_dir, f'{target_sample}_{e}.bam') for e in samples])
-        jgi_summarize(bams, join(task_out_dir, 'input', 'count_mat.tsv'))
+        bams = ' '.join([join(asm_dir, f'{target_sample}_{e}.bam') for e in samples])
+        ab.jgi_summarize(bams, join(task_out_dir, 'input', 'count_mat.tsv'))
 
     def bins_as_fasta(self, bin_dir):
         bins = glob.glob(join(bin_dir, '*.fa'))
@@ -240,6 +235,7 @@ class VAMBBinner(Binner):
 class SemiBin2Binner(Binner):
     name='SemiBin2'
     exec = 'SemiBin2'
+    """CAN TAKE AN ABUNDANCE TABLE."""
 
     def run_main(self, task_out_dir, options, samples, threads, **kwargs):
         bin_dir = join(task_out_dir, 'output/bins')
