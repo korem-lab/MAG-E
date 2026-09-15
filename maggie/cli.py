@@ -138,7 +138,7 @@ def simulate_mgx(
     project.simulate_mgx(threads, n_reads, seed, print_script)
 
 @app.command()
-def construct_tasks(
+def construct_manifest(
 ):
     """
     Constructs a task manifest, listing all MAG generation tasks to be run.
