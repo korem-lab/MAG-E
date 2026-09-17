@@ -157,11 +157,9 @@ def run_assembly(task, threads=8, force=False, check=False):
 def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False):
     if cov_sample is not None:
         assert cov_sample in task.samples
-    r1 = join(task.simulation_dir, f'{cov_sample}_R1.fastq.gz')
-    r2 = join(task.simulation_dir, f'{cov_sample}_R2.fastq.gz')
     options = '' if task.coverage_options == 'default' else task.coverage_options
     coverage = getattr(cv, f'{task.coverage}Coverage')()
-    kwargs = {'r1':r1, 'r2':r2, 'cov_sample':cov_sample, 'threads':threads, 'options':options}
+    kwargs = {'cov_sample':cov_sample, 'threads':threads, 'options':options}
     kwargs = task.to_dict() | kwargs
     if check:
         ckp = coverage.prep_done(**kwargs)

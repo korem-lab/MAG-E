@@ -19,6 +19,10 @@ def make_bash_template(name, time, mem, thread):
 #SBATCH --cpus-per-task={thread}
     """
 
+def get_temp_local(subdir='ic2465'):
+    dirname = '/local' if os.path.exists('/local') else '/pmglocal'
+    return join(dirname, subdir)
+
 def printit(func):
     def wrapper(*args, **kwargs):
         print(args[0] if args else kwargs.get('cmd'), flush=True)

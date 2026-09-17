@@ -3,7 +3,7 @@ import pandas as pd
 from os import makedirs, rename
 from os.path import join, exists, abspath, splitext, basename, dirname
 from ..utils import not_empty, soft_link, rm_dir, run
-from . import abundance as ab
+from . import coverage as cv
 import glob
 
 def clear_prep(task_out_dir):
@@ -104,14 +104,15 @@ class MaxBin2Binner(Binner):
     #    run(cmd)
     #    self.bins_as_fasta(f'{task_out_dir}/output/bins')
 
-    def run_main(self, task_out_dir, options, threads, **kwargs):
+    def run_main(self, task_out_dir, options, threads, target, samples, coverage, cov_dir, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         makedirs(join(task_out_dir, f'output/bins'), exist_ok=True)
         contigs = join(task_out_dir, 'input', 'asm.fasta')
-        assert(exists(contigs))
-        counts = glob.glob(join(task_out_dir, 'input', '*.coverage.tsv'))
-        counts = ' '.join(f'-abund{i} {fl}' for i, fl in enumerate(counts,start=1))
-        counts = counts.replace('-abund1', '-abund')
-        cmd = f'{self.exec} -thread {threads} {options} -contig {contigs} {counts} -out {task_out_dir}/output/bins/bin 2> {task_out_dir}/output/MaxBin2err.log'
+        cov_dir = cov_dir if apc else join(task_out_dir, 'input')
+        covs = [join(cov_dir, f'{s}_coverage.tsv') for s in samples]
+        covs = ' '.join(f'-abund{i} {fl}' for i, fl in enumerate(covs,start=1))
+        covs = covs.replace('-abund1', '-abund')
+        cmd = f'{self.exec} -thread {threads} {options} -contig {contigs} {covs} -out {task_out_dir}/output/bins/bin 2> {task_out_dir}/output/MaxBin2err.log'
         run(cmd)
         self.bins_as_fasta(f'{task_out_dir}/output/bins')
 
@@ -129,26 +130,26 @@ class MaxBin2Binner(Binner):
     #        counts = counts[:-1]  # Drop a trailing '*' from the idxstats file
     #        counts.to_csv(idxstats.replace('.idxstats','.counts'), sep='\t', header=None)
     
-    def run_prep(self, asm_dir, map_dir, samples, task_out_dir, **kwargs):
+    def run_prep(self, asm_dir, cov_dir, samples, task_out_dir, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        if apc: # nothing to do
+            return
         target_sample = samples[0]
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
         softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
-        bams = ' '.join([join(map_dir, f'{target_sample}_{e}.bam') for e in samples])
-        jgi_summarize(bams, join(task_out_dir, 'input', 'count_mat.tsv'))
-        cov = pd.read_csv(join(task_out_dir, 'input', 'count_mat.tsv'),delimiter='\t')
-        coverage_cols = cov.columns[3::2]
-        for cl in coverage_cols:
-            cov[['contigName', cl]].to_csv(
-                join(task_out_dir, 'input', cl.replace('.bam','.coverage.tsv')), 
-                sep='\t', header=None, index=None
-            )
+        bams = ' '.join([join(cov_dir, f'{e}.bam') for e in samples])
+        cov = join(task_out_dir, 'input','coverage_mat_jgi.tsv')
+        cv.jgi_summarize(bams, cov)
+        cv.jgi_to_maxbin2(dirname(cov),cov)
 
     def bins_as_fasta(self, bin_dir):
         bins = glob.glob(join(bin_dir, '*.fasta'))
         return bins
 
-    def prep_done(self, task_out_dir, samples, **kwargs):
-        fls = glob.glob(join(task_out_dir, 'input', '*.coverage.tsv'))
+    def prep_done(self, task_out_dir, samples, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        if apc: return True
+        fls = [join(task_out_dir, 'input', f'{s}_coverage.tsv') for s in samples]
         return all(not_empty(fl) for fl in fls)
 
     def main_done(self, task_out_dir, **kwargs):
@@ -160,20 +161,25 @@ class METABAT2Binner(Binner):
     name='METABAT2'
     exec='metabat2'
 
-    def run_main(self,task_out_dir, options, threads, **kwargs):
+    def run_main(self,task_out_dir, options, threads, cov_dir, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        cov_dir = cov_dir if apc else join(task_out_dir, 'input')
         makedirs(join(task_out_dir, f'output/bins'), exist_ok=True)
         contigs = join(task_out_dir, 'input', 'asm.fasta')
-        count_mat = join(task_out_dir, 'input', 'count_mat.tsv')
-        cmd = f'{self.exec} --numThreads {threads} {options} --inFile {contigs}  --abdFile {count_mat} --outFile {task_out_dir}/output/bins/bin'
+        cov = join(cov_dir, 'coverage_mat_jgi.tsv')
+        cmd = f'{self.exec} --numThreads {threads} {options} --inFile {contigs}  --abdFile {cov} --outFile {task_out_dir}/output/bins/bin'
         run(cmd)
         self.bins_as_fasta(f'{task_out_dir}/output/bins')
 
-    def run_prep(self, asm_dir, map_dir, samples, task_out_dir, **kwargs):
+    def run_prep(self, asm_dir, samples, task_out_dir, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        if apc: # nothing to do
+            return
         target_sample = samples[0]
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
         softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
-        bams = ' '.join([join(asm_dir, f'{target_sample}_{e}.bam') for e in samples])
-        ab.jgi_summarize(bams, join(task_out_dir, 'input', 'count_mat.tsv'))
+        bams = ' '.join([join(asm_dir, f'{e}.bam') for e in samples])
+        cv.jgi_summarize(bams, join(task_out_dir, 'input', 'coverage_mat_jgi.tsv'))
 
     def bins_as_fasta(self, bin_dir):
         bins = glob.glob(join(bin_dir, '*.fa'))
@@ -183,8 +189,10 @@ class METABAT2Binner(Binner):
         bins = glob.glob(join(bin_dir, '*.fasta'))
         return bins
 
-    def prep_done(self, task_out_dir, **kwargs):
-        return not_empty(join(task_out_dir, 'input', 'count_mat.tsv'))
+    def prep_done(self, task_out_dir, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        if apc: return True
+        return not_empty(join(task_out_dir, 'input', 'coverage_mat_jgi.tsv'))
 
     def main_done(self, task_out_dir, **kwargs):
         bin_dir = join(task_out_dir, 'output/bins')
@@ -195,22 +203,26 @@ class VAMBBinner(Binner):
     name='VAMB'
     exec='/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/vamb/bin/vamb'
 
-    def run_main(self, task_out_dir, options, threads, **kwargs):
-        input = join(task_out_dir, 'input')
-        rm_dir(join(task_out_dir, 'output'))
+    def run_main(self, task_out_dir, options, threads, cov_dir, coverage, **kwargs):
+        contigs = join(task_out_dir, 'input', 'asm.fasta')
         makedirs(join(task_out_dir, 'output'),exist_ok=True)
         bin_dir = join(task_out_dir, 'output/bins')
-        cmd = f'{self.exec} bin default -p {threads} {options} --outdir {bin_dir} --fasta {input}/asm.fasta --bamdir {input} --minfasta 100000 -o "" 2> {task_out_dir}/VAMB.errlog',
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        abund = f'--abundance_tsv {join(cov_dir, 'coverage_mat.tsv')}' if apc else f'--bamdir {join(task_out_dir, 'input')}'
+        cmd = f'{self.exec} bin default -p {threads} {options} --outdir {bin_dir} --fasta {contigs} {abund} --minfasta 100000 -o "" 2> {task_out_dir}/VAMB.errlog',
         run(cmd)
         self.bins_as_fasta(bin_dir)
 
-    def run_prep(self, asm_dir, map_dir, samples, task_out_dir, **kwargs):
+    def run_prep(self, asm_dir, cov_dir, samples, task_out_dir, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        if apc: # nothing to do
+            return
         target_sample = samples[0]
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
         softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
         for s in samples:
-            bam = join(map_dir, f'{target_sample}_{s}.bam')
-            bamln = join(task_out_dir, 'input', f'{target_sample}_{s}.bam')
+            bam = join(cov_dir, f'{s}.bam')
+            bamln = join(task_out_dir, 'input', f'{s}.bam')
             run(f'ln -s {bam} {bamln}')
 
     def bins_as_fasta(self, bin_dir):
@@ -223,10 +235,11 @@ class VAMBBinner(Binner):
         bins = glob.glob(join(bin_dir, '*.fasta'))
         return bins
 
-    def prep_done(self, task_out_dir, samples, **kwargs):
+    def prep_done(self, task_out_dir, samples, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        if apc: return True
         input_dir = join(task_out_dir, 'input')
-        ts = samples[0]
-        return not_empty(f'{input_dir}/asm.fasta') and all(not_empty(f'{input_dir}/{ts}_{s}.bam') for s in samples)
+        return not_empty(f'{input_dir}/asm.fasta') and all(not_empty(f'{input_dir}/{s}.bam') for s in samples)
 
     def main_done(self, task_out_dir, **kwargs):
         bin_dir = join(task_out_dir, 'output/bins')
@@ -235,45 +248,40 @@ class VAMBBinner(Binner):
 class SemiBin2Binner(Binner):
     name='SemiBin2'
     exec = 'SemiBin2'
-    """CAN TAKE AN ABUNDANCE TABLE."""
 
-    def run_main(self, task_out_dir, options, samples, threads, **kwargs):
+    def run_main(self, task_out_dir, options, target, samples, threads, cov_dir, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         bin_dir = join(task_out_dir, 'output/bins')
         # single and multi-sample binning differ
         contigs = join(task_out_dir, 'input', 'asm.fasta')
-        target_sample = samples[0]
-        if len(samples) == 1:
-            bam = join(task_out_dir, 'input', f'{target_sample}_{target_sample}.bam')
-            run(
-                f'{self.exec} single_easy_bin --threads {threads} {options} --environment human_gut -i {contigs} -b {bam} ' + 
-                f'-o {bin_dir} --compression none 2> {task_out_dir}/SemiBin2.errlog'
-            )
+        #if len(samples) == 1:
+        #    bam = join(task_out_dir, 'input', f'{target_sample}_{target_sample}.bam')
+        #    run(
+        #        f'{self.exec} single_easy_bin --threads {threads} {options} --environment human_gut -i {contigs} -b {bam} ' + 
+        #        f'-o {bin_dir} --compression none 2> {task_out_dir}/SemiBin2.errlog'
+        #    )
+        #else:
+        if apc: 
+            abund = '-a ' + ' '.join(f'{cov_dir}/{s}_coverage.tsv' for s in samples)
         else:
-            bams = ' '.join(f'{task_out_dir}/input/{target_sample}_{s}.bam' for s in samples)
-            run(
-                f'{self.exec} single_easy_bin --threads {threads} {options} -i {contigs} -b {bams} ' + 
-                f'-o {bin_dir} --compression none 2> {task_out_dir}/SemiBin2.errlog'
-            )
+            abund = '-b ' + ' '.join(f'{task_out_dir}/input/{s}.bam' for s in samples)
+        run(
+            f'{self.exec} single_easy_bin --threads {threads} {options} -i {contigs} {abund} ' + 
+            f'-o {bin_dir} --compression none 2> {task_out_dir}/SemiBin2.errlog'
+        )
         self.bins_as_fasta(bin_dir)
 
-    def run_prep(self, asm_dir, map_dir, samples, task_out_dir, **kwargs):
+    def run_prep(self, asm_dir, cov_dir, samples, target, task_out_dir, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}coverage').abundance_precomputed()
+        if apc: # nothing to do
+            return
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
         # single and multi-sample prep differ
-        if len(samples) == 1:
-            target_sample = samples[0]
-            bam = join(map_dir, f'{target_sample}_{target_sample}.bam')
-            bamln = join(task_out_dir, 'input', f'{target_sample}_{target_sample}.bam')
+        softlink_assembly_to_taskdir(asm_dir, target, task_out_dir)
+        for sample in samples:
+            bam = join(cov_dir, f'{sample}.bam')
+            bamln = join(task_out_dir, 'input', f'{sample}.bam')
             run(f'ln -s {bam} {bamln}')
-            # first get the contigs that will be binned
-            softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
-        else:
-            target_sample = samples[0]
-            softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
-            for sample in samples:
-                bam = join(map_dir, f'{target_sample}_{sample}.bam')
-                bamln = join(task_out_dir, 'input', f'{target_sample}_{sample}.bam')
-                run(f'ln -s {bam} {bamln}')
-
 
     def bins_as_fasta(self, bin_dir):
         bins = glob.glob(join(bin_dir, 'output_bins/*.fa'))
@@ -285,9 +293,11 @@ class SemiBin2Binner(Binner):
         bins = glob.glob(join(bin_dir, '*.fasta'))
         return bins
 
-    def prep_done(self, task_out_dir, samples, **kwargs):
+    def prep_done(self, task_out_dir, samples, coverage, **kwargs):
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        if apc: return True
         input_dir = join(task_out_dir, 'input')
-        return not_empty(f'{input_dir}/asm.fasta') and all(not_empty(f'{input_dir}/{samples[0]}_{s}.bam') for s in samples)
+        return not_empty(f'{input_dir}/asm.fasta') and all(not_empty(f'{input_dir}/{s}.bam') for s in samples)
 
     def main_done(self, task_out_dir, **kwargs):
         bin_dir = join(task_out_dir, 'output/bins')
@@ -317,7 +327,7 @@ class CONCOCTBinner(Binner):
         )
         self.bins_as_fasta(bin_dir)
 
-    def run_prep(self, asm_dir, map_dir, target, samples, task_out_dir, **kwargs):
+    def run_prep(self, asm_dir, cov_dir, target, samples, task_out_dir, **kwargs):
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
         # first get the contigs that will be binned
         asm = softlink_assembly_to_taskdir(asm_dir, target, task_out_dir)
@@ -327,7 +337,7 @@ class CONCOCTBinner(Binner):
             f'> {task_out_dir}/input/contig_10K.fa'
         )
         # make the coverage table
-        bams = ' '.join([join(map_dir, f'{target}_{s}.bam') for s in samples])
+        bams = ' '.join([join(cov_dir, f'{target}_{s}.bam') for s in samples])
         run(
             f'{self.exec}/concoct_coverage_table.py {task_out_dir}/input/contig_10K.bed {bams} ' +
             f'> {task_out_dir}/input/coverage_table.tsv'
@@ -369,7 +379,7 @@ class COMEBinBinner:
         )
         self.bins_as_fasta(f'{output}/bins')
 
-    def run_prep(self, asm_dir, map_dir, samples, task_out_dir, options, threads, **kwargs):
+    def run_prep(self, asm_dir, cov_dir, samples, task_out_dir, options, threads, **kwargs):
         input_dir = join(task_out_dir, 'input')
         output_dir = join(task_out_dir, 'output')
         makedirs(input_dir,exist_ok=True)
@@ -389,7 +399,7 @@ class COMEBinBinner:
         # extract bam for contigs > self.size
         for s in samples:
             run(
-                f'samtools view -@ {threads} -b -L {input_dir}/contig_names{self.size}.bed {map_dir}/{target_sample}_{s}.bam ' + 
+                f'samtools view -@ {threads} -b -L {input_dir}/contig_names{self.size}.bed {cov_dir}/{target_sample}_{s}.bam ' + 
                 f'> {input_dir}/{target_sample}_{s}.{self.size}.bam'
             )
 
