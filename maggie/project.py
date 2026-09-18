@@ -249,7 +249,19 @@ class Project:
 
         elif assembler and coverage and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','coverage','coverage_options','target']].drop_duplicates()) == 1)
-            return not tu.run_coverage(tsk.iloc[0,:], stage, cov_sample, threads, force, check)
+            if cov_sample:
+                # We're calculating the coverage for a specified sample (cov_sample) against the target
+                return not tu.run_coverage(tsk.iloc[0,:], stage, cov_sample, threads, force, check)
+            else:
+                # We're calculating coverage matrices for the target. Calculate the most expansive coverage matrix:
+                # if "all" mode, use "all" task, else use "single" task.
+                if any(tsk.binning_mode == 'all'):
+                    return not tu.run_coverage(tsk.loc[tsk.binning_mode == 'all',:].iloc[0,:], stage, cov_sample, threads, force, check)
+                elif any(tsk.binning_mode == 'single'):
+                    return not tu.run_coverage(tsk.loc[tsk.binning_mode == 'single',:].iloc[0,:], stage, cov_sample, threads, force, check)
+                else:
+                    raise Exception("Must have either all or single binning modes specified, but none were found in manifest.")
+
         elif assembler and not coverage and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','target']].drop_duplicates()) == 1)
             return not tu.run_assembly(tsk.iloc[0,:], threads, force, check)

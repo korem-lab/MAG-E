@@ -161,23 +161,23 @@ class METABAT2Binner(Binner):
     name='METABAT2'
     exec='metabat2'
 
-    def run_main(self,task_out_dir, options, threads, cov_dir, coverage, **kwargs):
+    def run_main(self,task_out_dir, options, threads, cov_dir, binning_mode, coverage, **kwargs):
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         cov_dir = cov_dir if apc else join(task_out_dir, 'input')
         makedirs(join(task_out_dir, f'output/bins'), exist_ok=True)
         contigs = join(task_out_dir, 'input', 'asm.fasta')
-        cov = join(cov_dir, 'coverage_mat_jgi.tsv')
+        cov = join(cov_dir, ('target_' if (binning_mode == 'single' and apc) else '') + 'coverage_mat_jgi.tsv')
         cmd = f'{self.exec} --numThreads {threads} {options} --inFile {contigs}  --abdFile {cov} --outFile {task_out_dir}/output/bins/bin'
         run(cmd)
         self.bins_as_fasta(f'{task_out_dir}/output/bins')
 
     def run_prep(self, asm_dir, samples, task_out_dir, coverage, **kwargs):
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
-        if apc: # nothing to do
-            return
         target_sample = samples[0]
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
         softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
+        if apc: # nothing to do
+            return
         bams = ' '.join([join(asm_dir, f'{e}.bam') for e in samples])
         cv.jgi_summarize(bams, join(task_out_dir, 'input', 'coverage_mat_jgi.tsv'))
 
@@ -190,8 +190,6 @@ class METABAT2Binner(Binner):
         return bins
 
     def prep_done(self, task_out_dir, coverage, **kwargs):
-        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
-        if apc: return True
         return not_empty(join(task_out_dir, 'input', 'coverage_mat_jgi.tsv'))
 
     def main_done(self, task_out_dir, **kwargs):
