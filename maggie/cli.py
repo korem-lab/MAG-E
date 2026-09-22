@@ -92,7 +92,7 @@ def verify_project(
 ):
     "Verifies the config, and populates the project with the required directories."
     _, directory = get_current_project()
-    project = Project.load(directory, verify=False)
+    project = Project.load(directory)
     project.config.verify_config()
 
 @app.command()
