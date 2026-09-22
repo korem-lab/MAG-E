@@ -38,14 +38,12 @@ class Project:
         return cls(project_path, config) 
 
     @classmethod
-    def load(cls, project_path: Path, verify=True) -> "Project":
+    def load(cls, project_path: Path) -> "Project":
         config = Config.from_yaml(join(project_path, "config.yaml"))
-        if verify:
-            config.verify_config()
+        config.verify_config()
         return cls(project_path, config)
 
     def build_core_directories(self):
-        # Verify the configuration 
         if self.config.simulate == 'yes':
             os.makedirs(self.config.ecosystem_db, exist_ok=True)
         else:
