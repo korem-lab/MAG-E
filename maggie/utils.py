@@ -30,7 +30,6 @@ def printit(func):
         print(args[0] if args else kwargs.get('cmd'), flush=True)
         return None
     return wrapper
-
 def run(cmd):
     _run(cmd, shell=True)
 
@@ -41,7 +40,8 @@ def move(src, dest):
     shutil.move(src, dest)
 
 def soft_link(src, dst):
-    run(f'ln -f -s {src} {dst}')
+    if not os.path.exists(dst):
+        run(f'ln -f -s {src} {dst}')
 
 def print_and_return(s):
     print(s,flush=True,end='')
