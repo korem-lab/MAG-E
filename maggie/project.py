@@ -12,7 +12,7 @@ from . import database as db
 from . import mirror_specs as ms
 from . import simulation as sm
 from . import evaluation as ev
-from .tasks import assembly as ab, binning as bn, quality_control as qc, mapping as mp, task_utils as tu
+from .tasks import assembly as ab, binning as bn, quality_control as qc, coverage as cv, task_utils as tu
 from . import ground_truth as gt 
 from .utils import parse_manifest, run_R_script, parse_contig_properties, print_and_return, soft_link
 from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
@@ -48,6 +48,7 @@ class Project:
             os.makedirs(self.config.ecosystem_db, exist_ok=True)
         else:
             # Soft link the reads
+            os.makedirs(self.config.simulation_dir, exist_ok=True)
             fqs = glob.glob(join(self.config.samples_dir, '*.fastq.gz'))
             for srcfq in fqs:
                 dstfq = join(self.config.simulation_dir, os.path.basename(srcfq))
@@ -130,8 +131,8 @@ class Project:
 
         # make the manifest
         manifest = tu.make_manifest(
-            self.config.assemblers, self.config.mappers, self.config.binners, self.config.binning_modes, self.config.refiners, self.config.qctools,
-            self.config.simulation_dir, self.config.assembly_cache, self.config.mapping_cache,
+            self.config.assemblers, self.config.coverage, self.config.binners, self.config.binning_modes, self.config.refiners, self.config.qctools,
+            self.config.simulation_dir, self.config.assembly_cache, self.config.coverage_cache,
             self.config.bintask_dir, self.config.project_base
         )
 
@@ -140,7 +141,7 @@ class Project:
         os.makedirs(self.config.bintask_dir, exist_ok=True)
         manifest.asm_dir.apply(lambda x: os.makedirs(x, exist_ok=True) if not pd.isna(x) else None)
         manifest.task_out_dir.apply(lambda x: os.makedirs(x, exist_ok=True))
-        manifest.map_dir.apply(lambda x: os.makedirs(x,exist_ok=True) if not pd.isna(x) else None)
+        manifest.cov_dir.apply(lambda x: os.makedirs(x,exist_ok=True) if not pd.isna(x) else None)
 
         if write_to_disk:
             manifest.to_csv(join(self.config.project_base, 'manifest.csv'), index=None)
@@ -167,7 +168,7 @@ class Project:
             return print_and_return(task_dir)
         elif type == 'list':
             assert of, Exception("--of must be specified if the query is a list.")
-            assert of in ['binners', 'assemblers', 'refiners', 'mappers', 'modes', 'qctools', 'targets', 'options', 'samples'], Exception('Invalid --of argument.')
+            assert of in ['binners', 'assemblers', 'refiners', 'coverage', 'modes', 'qctools', 'targets', 'options', 'samples'], Exception('Invalid --of argument.')
             if of in ['options', 'samples']:
                 assert within, Exception("Asking for a list of options or samples requires within to be specified.")
             if of not in ['options', 'samples']:
@@ -193,7 +194,7 @@ class Project:
             # but we need to account for qctools having multiple tools per task
             tools = {
                 'assembler': [tsk.assembler],
-                'mapper': [tsk.mapper],
+                'coverage': [tsk.coverage],
                 'binner': [tsk.binner],
                 'qctool': tsk.qctools
             }[type]
@@ -201,7 +202,7 @@ class Project:
                 if _tool is not None and tool != _tool:
                     continue
                 o = getattr(ab, f'{tool}Assembler')() if type == 'assembler' \
-                    else getattr(mp, f'{tool}Mapper')() if type == 'mapper' \
+                    else getattr(cv, f'{tool}Coverage')() if type == 'coverage' \
                     else getattr(bn, f'{tool}Binner')() if type == 'binner' \
                     else getattr(qc, f'{tool}QCTool')()
                 done = True
@@ -210,8 +211,8 @@ class Project:
                 if stage == 'main' or stage == 'all':
                     done &= o.main_done(**tsk.to_dict())
                 if not done:
-                    path = tsk.asm_dir if type == 'assembler' else tsk.map_dir if type == 'mapper' else tsk.task_out_dir
-                    opts = tsk.assembler_options if type == 'assembler' else tsk.mapper_options if type == 'mapper' else tsk.binner_options if type == 'binner' else 'default'
+                    path = tsk.asm_dir if type == 'assembler' else tsk.cov_dir if type == 'coverage' else tsk.task_out_dir
+                    opts = tsk.assembler_options if type == 'assembler' else tsk.coverage_options if type == 'coverage' else tsk.binner_options if type == 'binner' else 'default'
                     records.append((tool, opts, tsk.target, type, path))
         records = pd.DataFrame(records, columns = ['tool', 'options', 'target', 'type', 'path']).drop_duplicates()
         if to_file:
@@ -224,19 +225,19 @@ class Project:
             print(records.to_string(), flush=True)
             
     def run_task(
-        self, target, assembler, aopt, mapper, mopt, map_sample, binner, bopt, binning_mode, binner_set, qctool, stage, force, threads, check
+        self, target, assembler, aopt, coverage, copt, cov_sample, binner, bopt, binning_mode, binner_set, qctool, stage, force, threads, check
     ):
         """
         Generic interface to launch tasks MAG-E tasks from.
         """
         manifest = parse_manifest(self.config.manifest)
         tsk = tu.get_tasks(
-            manifest, assembler, aopt, mapper, mopt, binner, bopt, 
-            binning_mode, binner_set, target, map_sample
+            manifest, assembler, aopt, coverage, copt, binner, bopt, 
+            binning_mode, binner_set, target, cov_sample
         )
         if tsk.empty:
             raise Exception("No tasks fit the query.")
-        if assembler and mapper and binner and binning_mode:
+        if assembler and coverage and binner and binning_mode:
             if (len(tsk)!=1): raise Exception("Ambiguous. More than one task possible..")
             if qctool:
                 assert qctool in tsk.qctools.iloc[0]
@@ -244,30 +245,27 @@ class Project:
             else:
                 return not tu.run_binning(tsk.iloc[0,:], stage, threads, force, check)
 
-        elif assembler and mapper and not binner and not qctool:
-            assert(len(tsk[['assembler', 'assembler_options','mapper','mapper_options','target']].drop_duplicates()) == 1)
-            return not tu.run_mapping(tsk.iloc[0,:], stage, map_sample, threads, force, check)
-        elif assembler and not mapper and not binner and not qctool:
+        elif assembler and coverage and not binner and not qctool:
+            assert(len(tsk[['assembler', 'assembler_options','coverage','coverage_options','target']].drop_duplicates()) == 1)
+            if cov_sample:
+                # We're calculating the coverage for a specified sample (cov_sample) against the target
+                return not tu.run_coverage(tsk.iloc[0,:], stage, cov_sample, threads, force, check)
+            else:
+                # We're calculating coverage matrices for the target. Calculate the most expansive coverage matrix:
+                # if "all" mode, use "all" task, else use "single" task.
+                if any(tsk.binning_mode == 'all'):
+                    return not tu.run_coverage(tsk.loc[tsk.binning_mode == 'all',:].iloc[0,:], stage, cov_sample, threads, force, check)
+                elif any(tsk.binning_mode == 'single'):
+                    return not tu.run_coverage(tsk.loc[tsk.binning_mode == 'single',:].iloc[0,:], stage, cov_sample, threads, force, check)
+                else:
+                    raise Exception("Must have either all or single binning modes specified, but none were found in manifest.")
+
+        elif assembler and not coverage and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','target']].drop_duplicates()) == 1)
             return not tu.run_assembly(tsk.iloc[0,:], threads, force, check)
         else:
             raise Exception("Invalid options.")
 
-    #def run_assembly(self, threads):
-    #    """
-    #    Runs each assembly task in the manifest. 
-    #    """
-
-    #    manifest = parse_manifest(self.config.manifest)
-    #    tu.run_assemblies(manifest, threads)
-
-    #def run_mapping(self, threads):
-    #    """
-    #    Runs each assembly task in the manifest. 
-    #    """
-
-    #    manifest = parse_manifest(self.config.manifest)
-    #    tu.run_mapping(manifest, threads)
 
     def construct_ground_truth(self, min_contig_len=100, min_pident=99, min_prop=99, max_prop=101):
         """
@@ -278,14 +276,6 @@ class Project:
             manifest, self.config.ecosystem_db_metadata,
             min_contig_len, min_pident, min_prop, max_prop
         )
-    
-    #def run_binning(self, run_only, force_prep, force_bin, threads=8):
-    #    manifest = parse_manifest(self.config.manifest)
-    #    tu.run_bin_tasks(manifest, run_only, force_prep, force_bin, threads)
-
-    #def run_refine(self, run_only, force_refine, threads=8):
-    #    manifest = parse_manifest(self.config.manifest)
-    #    tu.run_refine_tasks(manifest, run_only, force_refine, threads)
     
     #def run_quality_control(self, threads=8):
     #    manifest = parse_manifest(self.config.manifest)
