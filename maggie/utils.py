@@ -38,7 +38,8 @@ def move(src, dest):
     shutil.move(src, dest)
 
 def soft_link(src, dst):
-    run(f'ln -f -s {src} {dst}')
+    if not os.path.exists(dst):
+        run(f'ln -f -s {src} {dst}')
 
 def print_and_return(s):
     print(s,flush=True,end='')
