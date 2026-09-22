@@ -2,13 +2,16 @@ from subprocess import run, DEVNULL
 from glob import glob
 
 from abc import ABC, abstractmethod
-from os.path import join
-from ..utils import rm_dir, rm_file, not_empty, run
+from os.path import join,dirname, exists, basename
+from ..utils import rm_dir, rm_file, not_empty, run, get_temp_local
 from . import assembly as ab
 
 def sort_bam(bam, coordinate=True, tmp_pref='tmp', threads=8):
     sort_coordinate = '' if coordinate else ' -n '
-    run(f'samtools sort -@ {threads} {sort_coordinate} {bam} > {bam}.{tmp_pref}')
+    dirname  = get_temp_local()
+    base = basename(bam).replace('.bam','')
+    temp_file = join(dirname, base)
+    run(f'samtools sort -@ {threads} -m 2G -T {temp_file} {sort_coordinate} {bam} > {bam}.{tmp_pref}')
     run(f'mv {bam}.{tmp_pref} {bam}')
 
 def index_bam(bam):
@@ -84,4 +87,4 @@ class bowtie2Mapper(Mapper):
     def prep_done(self, map_dir, **kwargs):
         # check the assembly is present
         files = glob(f'{map_dir}/*.bt2') + glob(f'{map_dir}/*.bt2l')
-        return all(not_empty(f) for f in files) and files
+        return all(not_empty(f) for f in files) and len(files)>0
