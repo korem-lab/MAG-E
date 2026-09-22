@@ -278,6 +278,15 @@ class aembCoverage(Coverage):
         covs = [join(cov_dir, f'{s}_coverage.tsv') for s in [target]]
         aembs_to_vamb(cov_dir, covs,'target_')
 
+        # semibin2 specific
+        cmd = f'SemiBin2 split_contigs -i {contigs} -o {cov_dir}'
+        run(cmd)
+        for s in samples:
+            r1 = join(simulation_dir, f'{s}_R1.fastq.gz')
+            r2 = join(simulation_dir, f'{s}_R2.fastq.gz')
+            cmd = f'{self.exec} -t {threads} -R 6 --aemb {cov_dir}/split_contigs.fna.gz {r1} {r2} -o {cov_dir}/sb2_{s}_coverage.tsv'
+            run(cmd)
+
 
     def main_done(self, **kwargs):
         return True
