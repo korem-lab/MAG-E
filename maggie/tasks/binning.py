@@ -104,12 +104,12 @@ class MaxBin2Binner(Binner):
     #    run(cmd)
     #    self.bins_as_fasta(f'{task_out_dir}/output/bins')
 
-    def run_main(self, task_out_dir, options, threads, target, samples, coverage, cov_dir, **kwargs):
+    def run_main(self, task_out_dir, options, threads, samples, binning_mode, target, coverage, cov_dir, **kwargs):
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         makedirs(join(task_out_dir, f'output/bins'), exist_ok=True)
         contigs = join(task_out_dir, 'input', 'asm.fasta')
         cov_dir = cov_dir if apc else join(task_out_dir, 'input')
-        covs = [join(cov_dir, f'{s}_coverage.tsv') for s in samples]
+        covs = [join(cov_dir, f'target_{target}_coverage.tsv')] if (binning_mode == 'single' and apc) else [join(cov_dir, f'{s}_coverage.tsv') for s in samples] 
         covs = ' '.join(f'-abund{i} {fl}' for i, fl in enumerate(covs,start=1))
         covs = covs.replace('-abund1', '-abund')
         cmd = f'{self.exec} -thread {threads} {options} -contig {contigs} {covs} -out {task_out_dir}/output/bins/bin 2> {task_out_dir}/output/MaxBin2err.log'
@@ -130,13 +130,12 @@ class MaxBin2Binner(Binner):
     #        counts = counts[:-1]  # Drop a trailing '*' from the idxstats file
     #        counts.to_csv(idxstats.replace('.idxstats','.counts'), sep='\t', header=None)
     
-    def run_prep(self, asm_dir, cov_dir, samples, task_out_dir, coverage, **kwargs):
+    def run_prep(self, asm_dir, cov_dir, samples, task_out_dir, target, coverage, **kwargs):
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        makedirs(join(task_out_dir, 'input'), exist_ok=True)
+        softlink_assembly_to_taskdir(asm_dir, target, task_out_dir)
         if apc: # nothing to do
             return
-        target_sample = samples[0]
-        makedirs(join(task_out_dir, 'input'), exist_ok=True)
-        softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
         bams = ' '.join([join(cov_dir, f'{e}.bam') for e in samples])
         cov = join(task_out_dir, 'input','coverage_mat_jgi.tsv')
         cv.jgi_summarize(bams, cov)
@@ -147,8 +146,6 @@ class MaxBin2Binner(Binner):
         return bins
 
     def prep_done(self, task_out_dir, samples, coverage, **kwargs):
-        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
-        if apc: return True
         fls = [join(task_out_dir, 'input', f'{s}_coverage.tsv') for s in samples]
         return all(not_empty(fl) for fl in fls)
 
@@ -171,11 +168,10 @@ class METABAT2Binner(Binner):
         run(cmd)
         self.bins_as_fasta(f'{task_out_dir}/output/bins')
 
-    def run_prep(self, asm_dir, samples, task_out_dir, coverage, **kwargs):
+    def run_prep(self, asm_dir, samples, task_out_dir, target, coverage, **kwargs):
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
-        target_sample = samples[0]
         makedirs(join(task_out_dir, 'input'), exist_ok=True)
-        softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
+        softlink_assembly_to_taskdir(asm_dir, target, task_out_dir)
         if apc: # nothing to do
             return
         bams = ' '.join([join(asm_dir, f'{e}.bam') for e in samples])
@@ -201,23 +197,26 @@ class VAMBBinner(Binner):
     name='VAMB'
     exec='/insomnia001/depts/pmg/users/ic2465/miniforge3/envs/vamb/bin/vamb'
 
-    def run_main(self, task_out_dir, options, threads, cov_dir, coverage, **kwargs):
+    def run_main(self, task_out_dir, options, threads, cov_dir, binning_mode, coverage, **kwargs):
         contigs = join(task_out_dir, 'input', 'asm.fasta')
         makedirs(join(task_out_dir, 'output'),exist_ok=True)
         bin_dir = join(task_out_dir, 'output/bins')
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
-        abund = f'--abundance_tsv {join(cov_dir, 'coverage_mat.tsv')}' if apc else f'--bamdir {join(task_out_dir, 'input')}'
-        cmd = f'{self.exec} bin default -p {threads} {options} --outdir {bin_dir} --fasta {contigs} {abund} --minfasta 100000 -o "" 2> {task_out_dir}/VAMB.errlog',
+        if apc:
+            pref = 'target_' if binning_mode == 'single' else ''
+            abund = f'--abundance_tsv {join(cov_dir, pref+'coverage_mat.tsv')}'
+        else:
+            abund = f'--bamdir {join(task_out_dir, 'input')}'
+        cmd = f'{self.exec} bin default -p {threads} {options} --outdir {bin_dir} --fasta {contigs} {abund} --minfasta 100000 -o "" 2> {task_out_dir}/VAMB.errlog'
         run(cmd)
         self.bins_as_fasta(bin_dir)
 
-    def run_prep(self, asm_dir, cov_dir, samples, task_out_dir, coverage, **kwargs):
+    def run_prep(self, asm_dir, cov_dir, samples, task_out_dir, target, coverage, **kwargs):
+        makedirs(join(task_out_dir, 'input'), exist_ok=True)
+        softlink_assembly_to_taskdir(asm_dir, target, task_out_dir)
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         if apc: # nothing to do
             return
-        target_sample = samples[0]
-        makedirs(join(task_out_dir, 'input'), exist_ok=True)
-        softlink_assembly_to_taskdir(asm_dir, target_sample, task_out_dir)
         for s in samples:
             bam = join(cov_dir, f'{s}.bam')
             bamln = join(task_out_dir, 'input', f'{s}.bam')
@@ -234,8 +233,6 @@ class VAMBBinner(Binner):
         return bins
 
     def prep_done(self, task_out_dir, samples, coverage, **kwargs):
-        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
-        if apc: return True
         input_dir = join(task_out_dir, 'input')
         return not_empty(f'{input_dir}/asm.fasta') and all(not_empty(f'{input_dir}/{s}.bam') for s in samples)
 
@@ -247,7 +244,7 @@ class SemiBin2Binner(Binner):
     name='SemiBin2'
     exec = 'SemiBin2'
 
-    def run_main(self, task_out_dir, options, target, samples, threads, cov_dir, coverage, **kwargs):
+    def run_main(self, task_out_dir, options, samples, threads, cov_dir, binning_mode, coverage, **kwargs):
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         bin_dir = join(task_out_dir, 'output/bins')
         # single and multi-sample binning differ
@@ -260,22 +257,25 @@ class SemiBin2Binner(Binner):
         #    )
         #else:
         if apc: 
-            abund = '-a ' + ' '.join(f'{cov_dir}/{s}_coverage.tsv' for s in samples)
+            pref = 'target_' if binning_mode == 'single' else ''
+            if coverage == 'aemb':
+                abund = '-a ' + ' '.join(f'{cov_dir}/sb2_{s}_coverage.tsv' for s in 2*samples)
+            else:
+                abund = f'--depth-metabat2 {join(cov_dir, f'{pref}coverage_mat_jgi.tsv')} --environment human_gut'
         else:
             abund = '-b ' + ' '.join(f'{task_out_dir}/input/{s}.bam' for s in samples)
-        run(
-            f'{self.exec} single_easy_bin --threads {threads} {options} -i {contigs} {abund} ' + 
-            f'-o {bin_dir} --compression none 2> {task_out_dir}/SemiBin2.errlog'
-        )
+        cmd = f'{self.exec} single_easy_bin --threads {threads} {options} -i {contigs} {abund} ' + \
+        f'-o {bin_dir} --compression none 2> {task_out_dir}/SemiBin2.errlog'
+        run(cmd)
         self.bins_as_fasta(bin_dir)
 
     def run_prep(self, asm_dir, cov_dir, samples, target, task_out_dir, coverage, **kwargs):
-        apc = getattr(cv, f'{coverage}coverage').abundance_precomputed()
+        makedirs(join(task_out_dir, 'input'), exist_ok=True)
+        softlink_assembly_to_taskdir(asm_dir, target, task_out_dir)
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         if apc: # nothing to do
             return
-        makedirs(join(task_out_dir, 'input'), exist_ok=True)
         # single and multi-sample prep differ
-        softlink_assembly_to_taskdir(asm_dir, target, task_out_dir)
         for sample in samples:
             bam = join(cov_dir, f'{sample}.bam')
             bamln = join(task_out_dir, 'input', f'{sample}.bam')
@@ -292,8 +292,6 @@ class SemiBin2Binner(Binner):
         return bins
 
     def prep_done(self, task_out_dir, samples, coverage, **kwargs):
-        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
-        if apc: return True
         input_dir = join(task_out_dir, 'input')
         return not_empty(f'{input_dir}/asm.fasta') and all(not_empty(f'{input_dir}/{s}.bam') for s in samples)
 
