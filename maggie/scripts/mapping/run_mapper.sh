@@ -1,7 +1,7 @@
 #!/bin/bash 
 #SBATCH --job-name=mapper
-#SBATCH --time=12:0:0
-#SBATCH --mem=32G
+#SBATCH --time=6:0:0
+#SBATCH --mem=24G
 #SBATCH --cpus-per-task=8
 #SBATCH --account pmg
 

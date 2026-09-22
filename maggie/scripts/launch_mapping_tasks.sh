@@ -1,9 +1,10 @@
 #!/bin/bash 
-#SBATCH --job-name=maplaunch
-#SBATCH --time=12:0:0
-#SBATCH --mem=8G
+#SBATCH --job-name=launch
+#SBATCH --time=6:0:0
+#SBATCH --mem=4G
+#SBATCH --account=pmg
 #SBATCH --cpus-per-task=2
-#SBATCH --account pmg
+export PYTHONPATH=/insomnia001/depts/pmg/users/ic2465/MAG-E
 
 
 # Map each assembly using each of the mapping tools 
@@ -26,14 +27,16 @@ for a in metaSPAdes; do
       readarray -d '' mopts < <(python -m maggie query list --of options --within $m)
         for mopt in "${mopts[@]}"; do 
           for t in $targets; do 
+            if [[ $t == SRR12344455 ]]; then continue; fi
             for mode in all; do
               # For each mode get the list of samples used to bin the target.
               readarray -d '' samples < <(python -m maggie query list --of samples --within $mode --target $t)
               for s in $samples; do 
-                python -m maggie run --check-done --assembler $a --assembler-options $aopt --target $t --map-sample $s --mapper $m --mapper-options $mopt
-                if [ $? -eq 1 ]; then 
-                  TARGET=$t SAMPLE=$s ASM=$a AOPT=$aopt MOPT=$mopt MAP=$m STAGE=main sbatch --export=ALL mapping/run_mapper.sh
-                fi 
+                #python -m maggie run --check-done --stage main --assembler $a --assembler-options $aopt --target $t --map-sample $s --mapper $m --mapper-options $mopt
+                #if [ $? -eq 1 ]; then 
+                  TARGET=$t SAMPLE=$s ASM=$a AOPT=$aopt MOPT=$mopt MAP=$m STAGE=main sbatch --export=ALL --job-name $m mapping/run_mapper.sh
+		  sleep 0.1
+                #fi 
             done
           done
         done
