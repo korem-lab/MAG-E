@@ -19,7 +19,7 @@ class Coverage(ABC):
         ...
 
     @abstractmethod
-    def run_prep(self, asm_dir, map_dir, threads, **kwargs):
+    def run_prep(self, assembly_dir, map_dir, threads, **kwargs):
         """
         Runs commands in preparation for mapping (e.g indexing, if needed).
         """
@@ -89,7 +89,7 @@ class Fairy(Coverage):
         # MAKE ALL FORMATS AVAILABLE HERE
         pass
 
-    def run_prep(self, asm_dir, simulation_dir, abund_dir, samples, threads, **kwargs):
+    def run_prep(self, assembly_dir, simulation_dir, abund_dir, samples, threads, **kwargs):
         # make sketches
         for s in samples:
             s = join(simulation_dir, s)
@@ -97,7 +97,7 @@ class Fairy(Coverage):
             run(cmd)
 
         # calculate coverage matrix
-        contigs = join(asm_dir, 'contigs.fasta')
+        contigs = join(assembly_dir, 'contigs.fasta')
         cmd = f'{self.name} coverage {abund_dir}/*.bcsp {contigs} -t {threads} -o {abund_dir}/coverage_jgifmt.tsv'
         run(cmd)
         cmd = f'{self.name} coverage --maxbin-format {abund_dir}/*.bcsp {contigs} -t {threads} -o {abund_dir}/coverage_mxbfmt.tsv'
@@ -130,12 +130,12 @@ class AEMB(Coverage):
     name: 'strobealign'
     execs: 'strobealign'
 
-    def run_main(self, simulation_dir, asm_dir, abund_dir, target, map_sample, threads, **kwargs):
+    def run_main(self, simulation_dir, assembly_dir, abund_dir, target, map_sample, threads, **kwargs):
         # FORMAT FOR DIFFERENT BINNERS
         pass 
 
-    def run_prep(self, simulation_dir, asm_dir, abund_dir, map_sample, threads, **kwargs):
-        contigs = join(asm_dir, 'contigs.fasta')
+    def run_prep(self, simulation_dir, assembly_dir, abund_dir, map_sample, threads, **kwargs):
+        contigs = join(assembly_dir, 'contigs.fasta')
         r1 = join(simulation_dir, f'{map_sample}_R1.fastq.gz')
         r2 = join(simulation_dir, f'{map_sample}_R2.fastq.gz')
         cmd = f'{self.execs} -t {threads} --aemb {contigs} {r1} {r2} > {abund_dir}/{map_sample}_coverage.tsv'

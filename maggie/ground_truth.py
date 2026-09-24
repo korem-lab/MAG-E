@@ -68,15 +68,15 @@ def construct_ground_truth(
     asm_tasks = set()
 
     # extract assembly tasks
-    asm_tasks = manifest[~manifest.is_refiner][['target_sample', 'simulation_dir', 'asm_dir']]
+    asm_tasks = manifest[~manifest.is_refiner][['target_sample', 'simulation_dir', 'assembly_dir']]
     asm_tasks.drop_duplicates(inplace=True)
     
     for i in range(len(asm_tasks)):
         t = asm_tasks.iloc[i,:]
         genomes = glob.glob(join(t.simulation_dir, f'iss_{t.target_sample}_genomes/*.fasta.gz'))
-        contigs = join(t.asm_dir, f'{t.target_sample}.fasta')
-        hits = get_blast_file(t.target_sample, contigs, genomes, t.asm_dir)
+        contigs = join(t.assembly_dir, f'{t.target_sample}.fasta')
+        hits = get_blast_file(t.target_sample, contigs, genomes, t.assembly_dir)
         hits = filter_blast_hits(hits, min_contig_len, min_pident, min_prop, max_prop)
         db_table = parse_maggie_db(maggie_db_table)
         gt = _construct_ground_truth(t.target_sample, db_table, hits)
-        gt.to_csv(os.path.join(t.asm_dir, f'{t.target_sample}_gt_table.csv'), index=None)
+        gt.to_csv(os.path.join(t.assembly_dir, f'{t.target_sample}_gt_table.csv'), index=None)

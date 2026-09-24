@@ -53,8 +53,8 @@ def run_R_script(script, *args):
     print(cmd)
     run(cmd)
 
-def write_done_flag(task_out_dir, name):
-    Path(os.path.join(task_out_dir, f'{name}_DONE')).touch()
+def write_done_flag(binner_dir, name):
+    Path(os.path.join(binner_dir, f'{name}_DONE')).touch()
 
 def get_contig_name(hdr):
     """get contig name from fasta header."""
@@ -97,22 +97,17 @@ def parse_quality_control_table(file):
     df = pd.read_csv(file)
     return df
 
-def parse_manifest(file):
-    df = pd.read_csv(file)
-    df.fillna({'assembler_summary_name':'', 'binner_summary_name':'', 'refiner_summary_name':''}, inplace=True)
-    df.samples = df.samples.apply(ast.literal_eval)
-    if 'qctools' in df.columns:
-        df.qctools = df.qctools.apply(ast.literal_eval)
-    if 'pipelines' in df.columns:
-        df.pipelines = df.pipelines.apply(lambda x: ast.literal_eval(x) if type(x) == str else x)
-    return df
+def flatten(elem):
+    x = list()
+    _flatten(elem,x)
+    return tuple(x)
 
-def flatten(elem, newl):
-    if type(elem) != list:
+def _flatten(elem, newl):
+    if type(elem) != tuple:
         newl.append(elem)
     else:
         for subl in elem:
-            flatten(subl, newl)
+            _flatten(subl, newl)
 
 def decompress(genomes, exe='unpigz', script=None):
     cmd = f'{exe} -f {genomes}'

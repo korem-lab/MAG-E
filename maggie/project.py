@@ -14,8 +14,9 @@ from . import simulation as sm
 from . import evaluation as ev
 from .tasks import assembly as ab, binning as bn, quality_control as qc, coverage as cv, task_utils as tu
 from . import ground_truth as gt 
-from .utils import parse_manifest, run_R_script, parse_contig_properties, print_and_return, soft_link
+from .utils import run_R_script, parse_contig_properties, print_and_return, soft_link
 from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
+from .manifest import Manifest
 
 
 class Project:
@@ -54,7 +55,6 @@ class Project:
                 dstfq = join(self.config.simulation_dir, os.path.basename(srcfq))
                 soft_link(srcfq, dstfq)
         os.makedirs(self.config.simulation_dir, exist_ok=True)
-        os.makedirs(self.config.bintask_dir, exist_ok=True)
         os.makedirs(self.config.evaluation_dir, exist_ok=True)
 
     def make_database(self, threads=8, ani=0.98, c=200, write_to_disk=False):
@@ -124,27 +124,20 @@ class Project:
         for fl in fls:
             os.remove(fl)
     
-    def construct_tasks(self, write_to_disk=False):
+    def construct_tasks(self):
         """
         Construct the manifest, which is a record of all MAG generation tasks.
         """
 
         # make the manifest
-        manifest = tu.make_manifest(
-            self.config.assemblers, self.config.coverage, self.config.binners, self.config.binning_modes, self.config.refiners, self.config.qctools,
-            self.config.simulation_dir, self.config.assembly_cache, self.config.coverage_cache,
-            self.config.bintask_dir, self.config.project_base
-        )
-
+        manifest = Manifest(self.config.project_base)
+        manifest.sync(self.config)
         # make the core directories for MAG generation. 
         os.makedirs(self.config.assembly_cache, exist_ok=True)
         os.makedirs(self.config.bintask_dir, exist_ok=True)
-        manifest.asm_dir.apply(lambda x: os.makedirs(x, exist_ok=True) if not pd.isna(x) else None)
-        manifest.task_out_dir.apply(lambda x: os.makedirs(x, exist_ok=True))
-        manifest.cov_dir.apply(lambda x: os.makedirs(x,exist_ok=True) if not pd.isna(x) else None)
-
-        if write_to_disk:
-            manifest.to_csv(join(self.config.project_base, 'manifest.csv'), index=None)
+        manifest.m.assembler_dir.apply(lambda x: os.makedirs(x, exist_ok=True) if not pd.isna(x) else None)
+        manifest.m.binner_dir.apply(lambda x: os.makedirs(x, exist_ok=True))
+        manifest.m.coverage_dir.apply(lambda x: os.makedirs(x,exist_ok=True) if not pd.isna(x) else None)
         return manifest
 
 
@@ -154,7 +147,7 @@ class Project:
         """
         Queries the maggie project for information
         """
-        manifest = parse_manifest(self.config.manifest)
+        manifest = Manifest(self.config.project_base)
         assert type in ['dir', 'list'], Exception('Only "dir" and "list" are valid queries.')
 
         if type == 'dir':
@@ -164,7 +157,7 @@ class Project:
                 return print_and_return(self.config.genomes_dir)
             if evaluations:
                 return print_and_return(self.config.evaluation_dir)
-            task_dir = tu.get_task_directory(manifest=manifest, target=target, **kwargs)
+            task_dir = manifest.get_task_directory(target=target, **kwargs)
             return print_and_return(task_dir)
         elif type == 'list':
             assert of, Exception("--of must be specified if the query is a list.")
@@ -186,10 +179,10 @@ class Project:
 
     def report(self, type, stage, _tool, to_file=False):
         assert stage in ['prep', 'main', 'all']
-        manifest = parse_manifest(self.config.manifest)
+        manifest = Manifest(self.config.project_base)
         records = list()
-        for idx in manifest.index:
-            tsk = manifest.loc[idx,:]
+        for idx in manifest.m.index:
+            tsk = manifest.m.loc[idx,:]
             # other than qctools each tsk has just one tool per type
             # but we need to account for qctools having multiple tools per task
             tools = {
@@ -211,7 +204,7 @@ class Project:
                 if stage == 'main' or stage == 'all':
                     done &= o.main_done(**tsk.to_dict())
                 if not done:
-                    path = tsk.asm_dir if type == 'assembler' else tsk.cov_dir if type == 'coverage' else tsk.task_out_dir
+                    path = tsk.assembler_dir if type == 'assembler' else tsk.coverage_dir if type == 'coverage' else tsk.binner_dir
                     opts = tsk.assembler_options if type == 'assembler' else tsk.coverage_options if type == 'coverage' else tsk.binner_options if type == 'binner' else 'default'
                     records.append((tool, opts, tsk.target, type, path))
         records = pd.DataFrame(records, columns = ['tool', 'options', 'target', 'type', 'path']).drop_duplicates()
@@ -230,9 +223,9 @@ class Project:
         """
         Generic interface to launch tasks MAG-E tasks from.
         """
-        manifest = parse_manifest(self.config.manifest)
-        tsk = tu.get_tasks(
-            manifest, assembler, aopt, coverage, copt, binner, bopt, 
+        manifest = Manifest(self.config.project_base)
+        tsk = manifest.get_tasks(
+            assembler, aopt, coverage, copt, binner, bopt, 
             binning_mode, binner_set, target, cov_sample
         )
         if tsk.empty:
@@ -271,19 +264,15 @@ class Project:
         """
         Constructs the ground truth for each assembly. 
         """
-        manifest = parse_manifest(self.config.manifest)
+        manifest = Manifest(self.config.project_base)
         gt.construct_ground_truth(
             manifest, self.config.ecosystem_db_metadata,
             min_contig_len, min_pident, min_prop, max_prop
         )
     
-    #def run_quality_control(self, threads=8):
-    #    manifest = parse_manifest(self.config.manifest)
-    #    tu.run_quality_control(manifest, threads=threads, force=True)
-
     def calc_per_genome_metrics(self):
         # Construct the binning table for each binning tasks
-        manifest = parse_manifest(self.config.manifest)
+        manifest = Manifest(self.config.project_base)
         tu.construct_binning_tables(manifest)
 
         # Build the reports. There is a report for each assembler, binner pair. 
@@ -312,15 +301,15 @@ class Project:
             gm.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}.genome_metrics.parquet'))
 
     def calc_contig_level_metrics(self, precision, recall, drop_raw_property=True):
-        manifest = parse_manifest(self.config.manifest)
+        manifest = Manifest(self.config.project_base)
         # Add ground truth genome origin to the contig properties
-        asm_tasks = manifest.loc[['assembler', 'target_sample', 'assembly_options', 'asm_dir']].drop_duplicates()
+        asm_tasks = manifest.loc[['assembler', 'target_sample', 'assembly_options', 'assembler_dir']].drop_duplicates()
         asm_tasks = asm_tasks[asm_tasks.assembly_options == 'default']
         cp_df_dataset = list()
         for i in range(len(asm_tasks)):
             t = asm_tasks.iloc[i,:]
-            cp_df = parse_contig_properties(join(t.asm_dir, f'{t.target_sample}_contig_properties.csv'))
-            gt_df = pd.read_csv(join(t.asm_dir, f'{t.target_sample}_gt_table.csv'))
+            cp_df = parse_contig_properties(join(t.assembler_dir, f'{t.target_sample}_contig_properties.csv'))
+            gt_df = pd.read_csv(join(t.assembler_dir, f'{t.target_sample}_gt_table.csv'))
             cp_df = pd.merge(cp_df, gt_df[['genome', 'key']], on='key')
             cp_df_dataset.append(cp_df)
         cp_df_dataset = pd.concat(cp_df_dataset)
@@ -333,7 +322,7 @@ class Project:
         gnm_metrics = ev.parse_genome_measurement_files(
             join(self.config.evaluation_dir, f'*.genome_metrics.parquet')
         )
-        gnm_metrics = gnm_metrics.loc[gnm_metrics.task_name.isin(dflt_bin_tasks.task_name)]
+        gnm_metrics = gnm_metrics.loc[gnm_metrics.task_hash.isin(dflt_bin_tasks.task_hash)]
 
         # get the recoverable set and filter to just those 
         _, rcvgnms = ev.recoverable_genome_set(gnm_metrics, recall, precision)

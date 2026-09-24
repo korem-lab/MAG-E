@@ -176,15 +176,15 @@ class Config:
 
     @property
     def assembly_cache(self):
-        return join(self.project_base, 'assembly_cache')
+        return join(self.project_base, 'assembler_tasks')
 
     @property
     def coverage_cache(self):
-        return join(self.project_base, 'coverage_cache')
+        return join(self.project_base, 'coverage_tasks')
 
     @property
     def bintask_dir(self):
-        return join(self.project_base, 'bintask_dir')
+        return join(self.project_base, 'binner_tasks')
 
     @property
     def manifest(self):
