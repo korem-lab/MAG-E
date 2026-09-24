@@ -11,14 +11,14 @@ class Assembler(ABC):
     execs: str
 
     @abstractmethod
-    def run_main(self, r1, r2, asm_dir, threads, options, **kwargs):
+    def run_main(self, r1, r2, assembler_dir, threads, options, **kwargs):
         """
         Runs the assembly algorithm according to its command-line interface.
         """
         ...
 
     @abstractmethod
-    def clean_up(self, asm_dir, **kwargs):
+    def clean_up(self, assembler_dir, **kwargs):
         """
         Removes unneeded files, leaving only the assembly fasta and renames the contigs.
         """
@@ -31,8 +31,8 @@ class Assembler(ABC):
         only the contig name with no whitespace."""
         ...
 
-    def main_done(self, asm_dir, **kwargs):
-        return exists(join(asm_dir, f'contigs.fasta'))
+    def main_done(self, assembler_dir, **kwargs):
+        return exists(join(assembler_dir, f'contigs.fasta'))
 
     def prep_done(self, **kwargs):
         return True
@@ -51,21 +51,21 @@ class MEGAHITAssembler(Assembler):
     name = 'MEGAHIT'
     exec = 'megahit'
 
-    def run_main(self, r1, r2, asm_dir, threads, options, **kwargs):
-        rm_dir(asm_dir, remake=True)
-        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -f -o {asm_dir}/asm'
+    def run_main(self, r1, r2, assembler_dir, threads, options, **kwargs):
+        rm_dir(assembler_dir, remake=True)
+        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -f -o {assembler_dir}/asm'
         run(cmd)
-        self.clean_up(asm_dir)
+        self.clean_up(assembler_dir)
     
     def reduce_header(self, header):
         return header.split()[0]
 
-    def clean_up(self, asm_dir, **kwargs):
-        old_fa_name = join(f'{asm_dir}/asm', 'final.contigs.fa')
-        new_fa_name= join(asm_dir, f'contigs.fasta')
+    def clean_up(self, assembler_dir, **kwargs):
+        old_fa_name = join(f'{assembler_dir}/asm', 'final.contigs.fa')
+        new_fa_name= join(assembler_dir, f'contigs.fasta')
         if exists(old_fa_name):
             rename(old_fa_name, new_fa_name)
-            rm_dir(f'{asm_dir}/asm')
+            rm_dir(f'{assembler_dir}/asm')
             self.reduce_fasta_header_to_contig_name(new_fa_name)
 
         
@@ -73,19 +73,19 @@ class metaSPAdesAssembler(Assembler):
     name = 'metaSPAdes'
     exec = 'metaspades.py'
 
-    def run_main(self, r1, r2, asm_dir, threads, options, **kwargs):
-        rm_dir(asm_dir, remake=True)
-        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -o {asm_dir}/asm'
+    def run_main(self, r1, r2, assembler_dir, threads, options, **kwargs):
+        rm_dir(assembler_dir, remake=True)
+        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -o {assembler_dir}/asm'
         run(cmd)
-        self.clean_up(asm_dir)
+        self.clean_up(assembler_dir)
 
     def reduce_header(self, header):
         return re.findall('(NODE_[0-9]+)_', header)[0]
 
-    def clean_up(self, asm_dir, **kwargs):
-        old_fa_name = join(f'{asm_dir}/asm', 'contigs.fasta')
-        new_fa_name= join(asm_dir, f'contigs.fasta')
+    def clean_up(self, assembler_dir, **kwargs):
+        old_fa_name = join(f'{assembler_dir}/asm', 'contigs.fasta')
+        new_fa_name= join(assembler_dir, f'contigs.fasta')
         if exists(old_fa_name):
             rename(old_fa_name, new_fa_name)
-            rm_dir(f'{asm_dir}/asm')
+            rm_dir(f'{assembler_dir}/asm')
             self.reduce_fasta_header_to_contig_name(new_fa_name)

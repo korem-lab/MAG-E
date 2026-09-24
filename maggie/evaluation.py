@@ -7,7 +7,7 @@ from .utils import parse_read_counts, parse_quality_control_table
 
 def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, read_counts=None, contig_props=None):
     rprt = list()
-    for e in manifest.task_out_dir:
+    for e in manifest.binner_dir:
         if exists(join(e, 'output/binning_table.csv')):
             rprt.append(pd.read_csv(join(e,'output/binning_table.csv'), index_col=0))
         else:
@@ -17,17 +17,17 @@ def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, rea
         qctbls = list()
         for i in range(len(manifest)):
             t = manifest.iloc[i, :]
-            if exists(join(t.task_out_dir, 'output/qc_table.csv')):
-                qctbl = parse_quality_control_table(join(t.task_out_dir, 'output/qc_table.csv'))
+            if exists(join(t.binner_dir, 'output/qc_table.csv')):
+                qctbl = parse_quality_control_table(join(t.binner_dir, 'output/qc_table.csv'))
                 qc_measures = [m for q in t.qctools for m in getattr(qc, q+'QCTool')().qc_measures]
-                qc_measures += ['bin', 'task_name']
+                qc_measures += ['bin', 'task_hash']
                 qctbls.append(qctbl[qc_measures])
             else:
                 print('Missing quality table: ', e)
         qctbls = pd.concat(qctbls)
         float_cols = qctbls.select_dtypes(include=['float']).columns
         qctbls[float_cols] = qctbls[float_cols].astype(np.float32)
-        rprt = pd.merge(rprt, qctbls, left_on=['task_name', 'representative_bin'], right_on=['task_name', 'bin'],how='left')
+        rprt = pd.merge(rprt, qctbls, left_on=['task_hash', 'representative_bin'], right_on=['task_hash', 'bin'],how='left')
         assert rprt[rprt.TP & rprt.bin.isna()].empty
     if add_cp:
         cptbls = pd.read_parquet(contig_props)
@@ -59,7 +59,7 @@ def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, rea
 def construct_genome_metrics(rprt):
     float_cols = rprt.select_dtypes(include=['float16']).columns
     rprt[float_cols] = rprt[float_cols].astype(np.float64)
-    metrics = compute_Fscore_metrics(rprt, ['task_name', 'genome'])
+    metrics = compute_Fscore_metrics(rprt, ['task_hash', 'genome'])
     return metrics
 
 def add_report_data(rprt, gm, manifest):
@@ -84,22 +84,22 @@ def add_report_data(rprt, gm, manifest):
     # i.e it shouldn't be there. Perhaps a better way to make the report is to make this consistent, relative to the genome studied.
     rprt = rprt[rprt.TP | rprt.FN][
         all_qc_measures + [
-            'genome','task_name','genome_length', 'genome_abundance', 'genome_n_reads', 'is_isolate',
+            'genome','task_hash','genome_length', 'genome_abundance', 'genome_n_reads', 'is_isolate',
         ]].drop_duplicates()
     gm.reset_index(drop=True, inplace=True)
-    gm = pd.merge(gm,rprt, left_on=['task_name', 'genome'], right_on=['task_name', 'genome'])
+    gm = pd.merge(gm,rprt, left_on=['task_hash', 'genome'], right_on=['task_hash', 'genome'])
 
-    manifest.set_index('task_name', inplace=True)
-    gm['binning_mode'] = gm.task_name.map(manifest.binning_mode)
-    gm['assembler'] = gm.task_name.map(manifest.assembler)
-    gm['sample'] = gm.task_name.map(manifest.target_sample)
-    gm['assembler_options'] = gm.task_name.map(manifest.assembler_options)
-    gm['is_refiner'] = gm.task_name.map(manifest.is_refiner)
-    gm['binner'] = gm.task_name.map(manifest.apply(
+    manifest.set_index('task_hash', inplace=True)
+    gm['binning_mode'] = gm.task_hash.map(manifest.binning_mode)
+    gm['assembler'] = gm.task_hash.map(manifest.assembler)
+    gm['sample'] = gm.task_hash.map(manifest.target_sample)
+    gm['assembler_options'] = gm.task_hash.map(manifest.assembler_options)
+    gm['is_refiner'] = gm.task_hash.map(manifest.is_refiner)
+    gm['binner'] = gm.task_hash.map(manifest.apply(
         lambda x: f'{x.binner}{x.binner_summary_name}' if not x.is_refiner else f'{x.refiner}{x.refiner_summary_name}', axis=1
     ))
-    gm['assembler'] = gm.task_name.map(manifest.apply(lambda x: f'{x.assembler}{x.assembler_summary_name}', axis=1))
-    gm['binner_options'] =  gm.task_name.map(manifest.apply(lambda x: x.binner_options if not x.is_refiner else x.refiner_options, axis=1))
+    gm['assembler'] = gm.task_hash.map(manifest.apply(lambda x: f'{x.assembler}{x.assembler_summary_name}', axis=1))
+    gm['binner_options'] =  gm.task_hash.map(manifest.apply(lambda x: x.binner_options if not x.is_refiner else x.refiner_options, axis=1))
     return gm
     
 def compute_Fscore_metrics(bt, groupby, property=None, coverage_based=True, selected_metric=None):
@@ -246,13 +246,13 @@ def construct_contig_property_metrics(prq_file, rcvgnms, manifest):
     all_metrics = list()
     for p in [e for e in rprt.columns if 'invpctl' in e]:
         assert not any(np.isinf(rprt[p].values))
-        metrics = compute_Fscore_metrics(rprt, ['task_name', p, p.replace('invpctl', 'pctl')], property=p, selected_metric='rc', coverage_based=False)
+        metrics = compute_Fscore_metrics(rprt, ['task_hash', p, p.replace('invpctl', 'pctl')], property=p, selected_metric='rc', coverage_based=False)
         all_metrics.append(metrics)
     all_metrics = pd.concat(all_metrics)
 
     # calculate discrete property metrics
     rprt = pd.merge(
-        manifest, bntsks[['binner','binning_mode','task_name']].drop_duplicates(), on='task_name'
+        manifest, bntsks[['binner','binning_mode','task_hash']].drop_duplicates(), on='task_hash'
     )
 
     all_discrete_metrics = list()
@@ -262,7 +262,7 @@ def construct_contig_property_metrics(prq_file, rcvgnms, manifest):
         for level in levels:
             score_level = compute_Fscore_metrics(
                 rprt[rprt.p == level], 
-                groupby=['task_name', 'binning_mode', 'binner', 'assembler', 'sample', 'genome'], 
+                groupby=['task_hash', 'binning_mode', 'binner', 'assembler', 'sample', 'genome'], 
                 selected_metric='rc', coverage_based=False
             )
             score_level['level'] = level
@@ -273,7 +273,7 @@ def construct_contig_property_metrics(prq_file, rcvgnms, manifest):
     all_metrics = pd.concat([all_metrics, all_discrete_metrics])
     all_metrics = all_metrics[
         [
-            'task_name', 'value','metric','property','n_bases','invpctl','pctl', 'genome',
+            'task_hash', 'value','metric','property','n_bases','invpctl','pctl', 'genome',
             'binning_mode', 'binner', 'assembler', 'sample', 'level'
         ]
     ]
