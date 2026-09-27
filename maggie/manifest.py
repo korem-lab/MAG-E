@@ -45,9 +45,9 @@ class Manifest():
         self.manifest_fl = join(project_base, '_manifest.csv')
         if exists(self.manifest_fl):
             self.read()
+            self.check()
         else:
             self.m = pd.DataFrame(columns=cols)
-        self.check()
 
     def check(self):
         assert(self.m.notna().all().all())

@@ -145,7 +145,7 @@ def construct_manifest(
     _, directory = get_current_project()
     project = Project.load(directory)
     project.build_core_directories()
-    project.construct_tasks(write_to_disk=True)
+    project.construct_tasks()
 
 @app.command()
 def query(

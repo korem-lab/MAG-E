@@ -30,15 +30,14 @@ def printit(func):
         print(args[0] if args else kwargs.get('cmd'), flush=True)
         return None
     return wrapper
+
 def run(cmd):
     _run(cmd, shell=True)
 
 def add_cmd(cmd, script):
     return script + f"\n{cmd}\n"
-
 def move(src, dest):
     shutil.move(src, dest)
-
 def soft_link(src, dst):
     if not os.path.exists(dst):
         run(f'ln -f -s {src} {dst}')
