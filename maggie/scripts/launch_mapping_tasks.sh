@@ -17,7 +17,7 @@ targets=$(python -m maggie query list --of targets)
 assemblers=$(python -m maggie query list --of assemblers)
 
 # List of all mapper tools
-mappers=$(python -m maggie query list --of mappers)
+mappers=$(python -m maggie query list --of coverage)
 
 # Loop through each mapping task (product over assemblers, mappers, and their options).
 for a in metaSPAdes; do 
@@ -32,11 +32,13 @@ for a in metaSPAdes; do
               # For each mode get the list of samples used to bin the target.
               readarray -d '' samples < <(python -m maggie query list --of samples --within $mode --target $t)
               for s in $samples; do 
-                #python -m maggie run --check-done --stage main --assembler $a --assembler-options $aopt --target $t --map-sample $s --mapper $m --mapper-options $mopt
-                #if [ $? -eq 1 ]; then 
-                  TARGET=$t SAMPLE=$s ASM=$a AOPT=$aopt MOPT=$mopt MAP=$m STAGE=main sbatch --export=ALL --job-name $m mapping/run_mapper.sh
-		  sleep 0.1
-                #fi 
+                python -m maggie run --check-done --stage main --assembler $a --assembler-options $aopt --target $t --cov-sample $s --coverage $m --coverage-options $mopt
+                if [ $? -eq 1 ]; then 
+                  echo TARGET=$t SAMPLE=$s ASM=$a AOPT=$aopt MOPT=$mopt MAP=$m STAGE=main sbatch --export=ALL --job-name $m mapping/run_mapper.sh
+		else
+		  echo done TARGET=$t SAMPLE=$s ASM=$a AOPT=$aopt MOPT=$mopt MAP=$m 
+                fi 
+
             done
           done
         done
