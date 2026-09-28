@@ -51,7 +51,7 @@ def run_assembly(task, threads=8, force=False, check=False):
     if check:
         return assembler.main_done(**kwargs)
     if force or not assembler.main_done(**kwargs):
-        rm_dir(task.assembly_dir, remake=True)
+        rm_dir(task.assembler_dir, remake=True)
         assembler.run_main(**kwargs)
 
 def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False):
@@ -143,7 +143,7 @@ def construct_binning_tables(manifest):
         else:
             b = getattr(bn, t.binner+'Binner')()
         bins = b.bins_as_fasta(join(t.binner_dir, 'output/bins'))
-        bint = compute_binning_table(t.task_hash, t.target, bins, t.assembly_dir)
+        bint = compute_binning_table(t.task_hash, t.target, bins, t.assembler_dir)
         bint.to_csv(join(t.binner_dir, 'output', 'binning_table.csv'))
 
 def compute_binning_table(task_hash, sample, bins, gt_dir):
