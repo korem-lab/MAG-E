@@ -42,7 +42,7 @@ def fill(df, taskcols, idcol):
 
 class Manifest():
     def __init__(self, project_base):
-        self.manifest_fl = join(project_base, '_manifest.csv')
+        self.manifest_fl = join(project_base, 'manifest.csv')
         if exists(self.manifest_fl):
             self.read()
             self.check()
@@ -144,7 +144,7 @@ class Manifest():
             assembler, aopt, coverage, copt, binner, bopt, binning_mode, binner_set, target, cov_sample
         ):
         flt = lambda x,y: self.m[x] == y if y is not None else pd.Series(True, index=self.m.index)
-        ms_flt = lambda ms: self.m.samples.apply(lambda x: ms in x) if ms is not None else pd.Series(True, index=manifest.index)
+        ms_flt = lambda cs: self.m.samples.apply(lambda x: cs in x) if cs is not None else pd.Series(True, index=self.m.index)
         if binner_set:
             binner_set = tuple(tuple(e.split(',')) for e in binner_set.split(':'))
         return self.m.loc[

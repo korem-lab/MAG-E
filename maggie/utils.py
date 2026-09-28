@@ -20,7 +20,7 @@ def make_bash_template(name, time, mem, thread):
     """
 
 def get_temp_local(subdir='ic2465'):
-    dirname = '/pmglocal'
+    dirname = '/local'
     dirname = join(dirname, subdir)
     os.makedirs(dirname, exist_ok=True)
     return dirname
