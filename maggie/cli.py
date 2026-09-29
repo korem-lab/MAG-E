@@ -199,7 +199,6 @@ def task_report(
         )
     ):
     _, directory = get_current_project()
-    print(directory)
     project = Project.load(directory)
     # refiners treated as binners under the hood
     project.report(type, stage, tool, to_file)
