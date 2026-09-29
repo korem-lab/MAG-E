@@ -333,7 +333,7 @@ class CONCOCTBinner(Binner):
             f'> {binner_dir}/input/contig_10K.fa'
         )
         # make the coverage table
-        bams = ' '.join([join(coverage_dir, f'{target}_{s}.bam') for s in samples])
+        bams = ' '.join([join(coverage_dir, f'{s}.bam') for s in samples])
         run(
             f'{self.exec}/concoct_coverage_table.py {binner_dir}/input/contig_10K.bed {bams} ' +
             f'> {binner_dir}/input/coverage_table.tsv'
@@ -395,8 +395,8 @@ class COMEBinBinner:
         # extract bam for contigs > self.size
         for s in samples:
             run(
-                f'samtools view -@ {threads} -b -L {input_dir}/contig_names{self.size}.bed {coverage_dir}/{target_sample}_{s}.bam ' + 
-                f'> {input_dir}/{target_sample}_{s}.{self.size}.bam'
+                f'samtools view -@ {threads} -b -L {input_dir}/contig_names{self.size}.bed {coverage_dir}/{s}.bam ' + 
+                f'> {input_dir}/{s}.{self.size}.bam'
             )
 
         # run data augmentation step
