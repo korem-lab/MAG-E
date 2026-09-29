@@ -264,7 +264,6 @@ class SemiBin2Binner(Binner):
                 abund = f'--depth-metabat2 {join(coverage_dir, f'{pref}coverage_mat_jgi.tsv')} --environment human_gut'
         else:
             abund = '-b ' + ' '.join(f'{binner_dir}/input/{s}.bam' for s in samples)
-            abund = abund + ' --environment human_gut '
         cmd = f'{self.exec} single_easy_bin --threads {threads} {options} -i {contigs} {abund} ' + \
         f'-o {bin_dir} --compression none 2> {binner_dir}/SemiBin2.errlog'
         run(cmd)
