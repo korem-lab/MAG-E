@@ -193,7 +193,6 @@ def task_report(
     project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
     ):
     _, directory = _get_project(project_name)
-    print(directory)
     project = Project.load(directory)
     # refiners treated as binners under the hood
     project.report(type, stage, tool, to_file)

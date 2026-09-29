@@ -57,8 +57,8 @@ def bin_done(bin_dir):
     bins = glob.glob(f'{bin_dir}/*.fasta')
     return all(not_empty(e) for e in bins) and len(bins) > 0
 
-def softlink_assembly_to_taskdir(assembly_dir, sample, binner_dir, prefix=None):
-    contigs = abspath(join(assembly_dir, f'contigs.fasta'))
+def softlink_assembly_to_taskdir(assembler_dir, sample, binner_dir, prefix=None):
+    contigs = abspath(join(assembler_dir, f'contigs.fasta'))
     asm = join(binner_dir, 'input', 'asm.fasta') if prefix is None else join(binner_dir, 'input', f'{prefix}.fasta')
     soft_link(contigs, asm)
     return asm
@@ -71,7 +71,7 @@ class Binner(ABC):
     exec: str
 
     @abstractmethod
-    def run_prep(self, assembly_dir, samples, binner_dir, **kwargs):
+    def run_prep(self, assembler_dir, samples, binner_dir, **kwargs):
         ...
 
     @abstractmethod
@@ -116,11 +116,11 @@ class MaxBin2Binner(Binner):
         run(cmd)
         self.bins_as_fasta(f'{binner_dir}/output/bins')
 
-    #def run_prep(self, assembly_dir, map_dir, samples, binner_dir, **kwargs):
+    #def run_prep(self, assembler_dir, map_dir, samples, binner_dir, **kwargs):
     #    target_sample = samples[0]
     #    makedirs(join(binner_dir, 'input'), exist_ok=True)
     #    # first get the contigs that will be binned (asm.fasta)
-    #    softlink_assembly_to_taskdir(assembly_dir, target_sample, binner_dir)
+    #    softlink_assembly_to_taskdir(assembler_dir, target_sample, binner_dir)
     #    for s in samples:
     #        bam = join(map_dir, f'{target_sample}_{s}.bam')
     #        idxstats = join(binner_dir, 'input', f'{s}.idxstats')
@@ -130,10 +130,10 @@ class MaxBin2Binner(Binner):
     #        counts = counts[:-1]  # Drop a trailing '*' from the idxstats file
     #        counts.to_csv(idxstats.replace('.idxstats','.counts'), sep='\t', header=None)
     
-    def run_prep(self, assembly_dir, coverage_dir, samples, binner_dir, target, coverage, **kwargs):
+    def run_prep(self, assembler_dir, coverage_dir, samples, binner_dir, target, coverage, **kwargs):
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         makedirs(join(binner_dir, 'input'), exist_ok=True)
-        softlink_assembly_to_taskdir(assembly_dir, target, binner_dir)
+        softlink_assembly_to_taskdir(assembler_dir, target, binner_dir)
         if apc: # nothing to do
             return
         bams = ' '.join([join(coverage_dir, f'{e}.bam') for e in samples])
@@ -168,13 +168,13 @@ class METABAT2Binner(Binner):
         run(cmd)
         self.bins_as_fasta(f'{binner_dir}/output/bins')
 
-    def run_prep(self, assembly_dir, samples, binner_dir, target, coverage, **kwargs):
+    def run_prep(self, assembler_dir, samples, binner_dir, target, coverage, coverage_dir, **kwargs):
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         makedirs(join(binner_dir, 'input'), exist_ok=True)
-        softlink_assembly_to_taskdir(assembly_dir, target, binner_dir)
+        softlink_assembly_to_taskdir(assembler_dir, target, binner_dir)
         if apc: # nothing to do
             return
-        bams = ' '.join([join(assembly_dir, f'{e}.bam') for e in samples])
+        bams = ' '.join([join(coverage_dir, f'{e}.bam') for e in samples])
         cv.jgi_summarize(bams, join(binner_dir, 'input', 'coverage_mat_jgi.tsv'))
 
     def bins_as_fasta(self, bin_dir):
@@ -211,9 +211,9 @@ class VAMBBinner(Binner):
         run(cmd)
         self.bins_as_fasta(bin_dir)
 
-    def run_prep(self, assembly_dir, coverage_dir, samples, binner_dir, target, coverage, **kwargs):
+    def run_prep(self, assembler_dir, coverage_dir, samples, binner_dir, target, coverage, **kwargs):
         makedirs(join(binner_dir, 'input'), exist_ok=True)
-        softlink_assembly_to_taskdir(assembly_dir, target, binner_dir)
+        softlink_assembly_to_taskdir(assembler_dir, target, binner_dir)
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         if apc: # nothing to do
             return
@@ -269,9 +269,9 @@ class SemiBin2Binner(Binner):
         run(cmd)
         self.bins_as_fasta(bin_dir)
 
-    def run_prep(self, assembly_dir, coverage_dir, samples, target, binner_dir, coverage, **kwargs):
+    def run_prep(self, assembler_dir, coverage_dir, samples, target, binner_dir, coverage, **kwargs):
         makedirs(join(binner_dir, 'input'), exist_ok=True)
-        softlink_assembly_to_taskdir(assembly_dir, target, binner_dir)
+        softlink_assembly_to_taskdir(assembler_dir, target, binner_dir)
         apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
         if apc: # nothing to do
             return
@@ -323,10 +323,10 @@ class CONCOCTBinner(Binner):
         )
         self.bins_as_fasta(bin_dir)
 
-    def run_prep(self, assembly_dir, coverage_dir, target, samples, binner_dir, **kwargs):
+    def run_prep(self, assembler_dir, coverage_dir, target, samples, binner_dir, **kwargs):
         makedirs(join(binner_dir, 'input'), exist_ok=True)
         # first get the contigs that will be binned
-        asm = softlink_assembly_to_taskdir(assembly_dir, target, binner_dir)
+        asm = softlink_assembly_to_taskdir(assembler_dir, target, binner_dir)
         # cut up the fasta into chunks
         run(
             f'{self.exec}/cut_up_fasta.py {asm} -c 10000 -o 0 --merge_last -b {binner_dir}/input/contig_10K.bed ' +
@@ -375,14 +375,14 @@ class COMEBinBinner:
         )
         self.bins_as_fasta(f'{output}/bins')
 
-    def run_prep(self, assembly_dir, coverage_dir, samples, binner_dir, options, threads, **kwargs):
+    def run_prep(self, assembler_dir, coverage_dir, samples, binner_dir, options, threads, **kwargs):
         input_dir = join(binner_dir, 'input')
         output_dir = join(binner_dir, 'output')
         makedirs(input_dir,exist_ok=True)
         makedirs(output_dir,exist_ok=True)
         makedirs(f'{output_dir}/bins', exist_ok=True)
         target_sample = samples[0]
-        asm =  softlink_assembly_to_taskdir(assembly_dir, target_sample, binner_dir)
+        asm =  softlink_assembly_to_taskdir(assembler_dir, target_sample, binner_dir)
         # reduce to default (1000bp)
         run(f'mamba run -n {self.exec} /insomnia001/depts/pmg/users/ic2465/miniforge3/envs/comebin/bin/COMEBin/scripts/Filter_tooshort.py {asm} {self.size}')
 
@@ -448,7 +448,7 @@ class Refiner(ABC):
 class DAS_ToolRefiner(Refiner):
     name = 'DAS_Tool'
     exec = 'DAS_Tool'
-    def run_main(self, binner_dir, options, pipelines, ppln_bin_out,assembly_dir, target_sample, threads=8, **kwargs):
+    def run_main(self, binner_dir, options, pipelines, ppln_bin_out,assembler_dir, target_sample, threads=8, **kwargs):
         summaries = list()
         bin_dir = join(binner_dir, f'output/bins')
         makedirs(bin_dir, exist_ok=True)
@@ -465,7 +465,7 @@ class DAS_ToolRefiner(Refiner):
                     hdrs += [(e.strip()[1:], bin_name) for e in fin if e.startswith('>')]
             pd.DataFrame(hdrs).to_csv(das_summary, header=None, index=None, sep='\t')
             summaries.append(das_summary)
-        contigs = softlink_assembly_to_taskdir(assembly_dir, target_sample, binner_dir)
+        contigs = softlink_assembly_to_taskdir(assembler_dir, target_sample, binner_dir)
         contig2bin = ','.join(summaries)
         run(
             f'DAS_Tool -t {threads} {options} -i {contig2bin} -c {contigs} -o {bin_dir} --write_bin_evals --write_bins --write_unbinned'
