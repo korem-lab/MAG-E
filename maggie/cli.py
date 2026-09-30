@@ -5,7 +5,6 @@ from sys import exit
 import pandas as pd
 from typer.core import TyperGroup
 from pathlib import Path
-from typing import Optional
 from .project import Project
 
 class OrderedGroup(TyperGroup):
@@ -47,7 +46,7 @@ def _get_project(name):
     df = pd.read_csv(cache_name, sep='\t')
     # grabbing a specific project
     if name:
-        assert ((df.name == name).any(), Exception(f"{name} is not the name of a project in the cache.")) # project should be valid
+        assert (df.name == name).any(), Exception(f"{name} is not the name of a project in the cache.") # project should be valid
         return df[df.name == name].name.item(), df[df.name == name].directory.item()
     # grabbing the current
     else:
@@ -84,7 +83,7 @@ def reset_cache():
 
 @app.command()
 def verify_project(
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     "Verifies the config, and populates the project with the required directories."
     _, directory = _get_project(project_name)
@@ -96,7 +95,7 @@ def make_maggie_db(
     threads: int = typer.Option(8, help='Threads to run dRep clustering and sylph'),
     ani: float = typer.Option(0.98, help='ANI for strain clustering'),
     c: int = typer.Option(200, help='Sylph sketch density.'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Constructs the MAG-E database for the project.
@@ -111,7 +110,7 @@ def make_mirrors(
     threads: int = typer.Option(8, help='Threads to run dRep clustering and sylph'),
     c: int = typer.Option(200, help='Sylph sketch density.'),
     seed: int = typer.Option(37, help='Random seed value for strain abundance draws.'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Constructs a mirror specification for each sample in the directory.
@@ -126,7 +125,7 @@ def simulate_mgx(
     n_reads: str = typer.Option('auto', help='Number of reads to simulate for each sample. Default matches the sample.'),
     seed: int= typer.Option(37, help='Random seed value passed to insilico seq'),
     print_script: bool = typer.Option(False, help='Writes slurm scripts (rather than running sequentially).'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Simulated metagenomes using the mirror specifications.
@@ -137,7 +136,7 @@ def simulate_mgx(
 
 @app.command()
 def construct_manifest(
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Constructs a task manifest, listing all MAG generation tasks to be run.
@@ -166,7 +165,7 @@ def query(
     evaluations: bool = typer.Option(False, help='Return the directory of pipeline evaluations.'),
     of: str = typer.Option(None, help='Provide the list of...'),
     within: str = typer.Option(None, help='CLI options within a tool or samples within a mode.'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Prints either the assembly task directory or the bin task directory 
@@ -190,7 +189,7 @@ def task_report(
     stage: str = typer.Argument(..., help='Either: prep, main, all.'),
     tool : str = typer.Option(None, help='Either: a particular tool.'),
     to_file: bool = typer.Option(False, help='Either: prep, main, all.'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
     ):
     _, directory = _get_project(project_name)
     project = Project.load(directory)
@@ -217,7 +216,7 @@ def run(
     force: bool = typer.Option(False, help='Force run the stage.'),
     threads: int  = typer.Option(8, help='Number of threads to launch tasks with'),
     check_done: bool = typer.Option(False, help='Check whether task done.'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     _, directory = _get_project(project_name)
     project = Project.load(directory)
@@ -254,7 +253,7 @@ def construct_ground_truth(
     min_pident: float = typer.Option(99, help='Minimum percent identity for a ground truth match'),
     min_aln_prop: float = typer.Option(99, help='alignment_length >= contig_length*(min_aln_prop) for a ground truth match'),
     max_aln_prop: float = typer.Option(101, help='alignment_length <= contig_length*(max_aln_prop) for a ground truth match'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Constructs the ground truth for each assembly.
@@ -266,7 +265,7 @@ def construct_ground_truth(
 
 @app.command()
 def calc_per_genome_metrics(
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Calculate MAG-E recall, precision, F-score per genome. 
@@ -279,7 +278,7 @@ def calc_per_genome_metrics(
 def calc_contig_level_metrics(
     precision: float = typer.Option(0.9, help='Minimum MAG-E precision for the recoverable set.'),
     recall: float = typer.Option(0.7, help='Minimum MAG-E recall for the recoverable set.'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Calculate MAG-E recall, precision, F-score of contig groups. 
@@ -294,7 +293,7 @@ def evaluate_pipelines(
     no_plots: bool = typer.Option(True, help='No plots will be produced.'),
     precision: float = typer.Option(0.9, help='Minimum MAG-E precision for the recoverable set.'),
     recall: float = typer.Option(0.7, help='Minimum MAG-E recall for the recoverable set.'),
-    project_name: str = typer.Optional(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     """
     Builds a linear mixed model of the per-genome metrics over all MAG-pipelines.
