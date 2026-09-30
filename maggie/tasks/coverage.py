@@ -62,7 +62,7 @@ class Coverage(ABC):
         ...
 
     @abstractmethod
-    def run_prep(self, assembly_dir, coverage_dir, threads, **kwargs):
+    def run_prep(self, assembler_dir, coverage_dir, threads, **kwargs):
         """
         Runs commands in preparation for coverage (e.g indexing, if needed).
         """
@@ -98,9 +98,9 @@ class bowtie2Coverage(Coverage):
         sort_bam(bam, threads)
         index_bam(bam)
 
-    def run_prep(self, coverage_dir, assembly_dir, threads, **kwargs):
+    def run_prep(self, coverage_dir, assembler_dir, threads, **kwargs):
         rm_dir(coverage_dir, remake=True)
-        cmd = f'bowtie2-build --threads {threads} {assembly_dir}/contigs.fasta {coverage_dir}/idx'
+        cmd = f'bowtie2-build --threads {threads} {assembler_dir}/contigs.fasta {coverage_dir}/idx'
         run(cmd)
     
     def main_done(self, coverage_dir, cov_sample, **kwargs):
@@ -135,12 +135,12 @@ class bowtie2JGICoverage(Coverage):
         for f in glob(join(coverage_dir, '*.bai')):
             rm_file(f)
 
-    def run_prep(self, coverage_dir, simulation_dir, samples, assembly_dir, threads, options, **kwargs):
+    def run_prep(self, coverage_dir, simulation_dir, samples, assembler_dir, threads, options, **kwargs):
         # remove old files
         rm_dir(coverage_dir, remake=True)
 
         # index
-        cmd = f'bowtie2-build --threads {threads} {assembly_dir}/contigs.fasta {coverage_dir}/idx'
+        cmd = f'bowtie2-build --threads {threads} {assembler_dir}/contigs.fasta {coverage_dir}/idx'
         run(cmd)
 
         # map
@@ -185,12 +185,12 @@ class bwamem2JGICoverage(Coverage):
         for f in glob(join(coverage_dir, '*.bai')):
             rm_file(f)
 
-    def run_prep(self, coverage_dir, simulation_dir, samples, assembly_dir, threads, options, **kwargs):
+    def run_prep(self, coverage_dir, simulation_dir, samples, assembler_dir, threads, options, **kwargs):
         # remove old files
         rm_dir(coverage_dir, remake=True)
 
         # index
-        cmd = f'bwa-mem2 index -p {coverage_dir}/idx {assembly_dir}/contigs.fasta '
+        cmd = f'bwa-mem2 index -p {coverage_dir}/idx {assembler_dir}/contigs.fasta '
         run(cmd)
 
         # map
@@ -219,16 +219,16 @@ class fairyCoverage(Coverage):
     def abundance_precomputed():
         return True
 
-    def run_main(self, assembly_dir, coverage_dir, threads, target, **kwargs):
+    def run_main(self, assembler_dir, coverage_dir, threads, target, **kwargs):
         # calculate coverage matrix
-        contigs = join(assembly_dir, 'contigs.fasta')
+        contigs = join(assembler_dir, 'contigs.fasta')
         cmd = f'fairy coverage {coverage_dir}/*.bcsp {contigs} -t {threads} -o {coverage_dir}/coverage_mat_jgi.tsv'
         run(cmd)
         jgi_to_maxbin2(coverage_dir, join(coverage_dir, 'coverage_mat_jgi.tsv'))
         jgi_to_vamb(coverage_dir, join(coverage_dir, 'coverage_mat_jgi.tsv'))
 
         # single mode
-        contigs = join(assembly_dir, 'contigs.fasta')
+        contigs = join(assembler_dir, 'contigs.fasta')
         cmd = f'fairy coverage {coverage_dir}/{target}.paired.bcsp {contigs} -t {threads} -o {coverage_dir}/target_coverage_mat_jgi.tsv'
         run(cmd)
         jgi_to_maxbin2(coverage_dir, join(coverage_dir, 'target_coverage_mat_jgi.tsv'), 'target_')
@@ -260,8 +260,8 @@ class aembCoverage(Coverage):
     def run_main(self, **kwargs):
         pass 
 
-    def run_prep(self, simulation_dir, assembly_dir, coverage_dir, samples, target, threads, **kwargs):
-        contigs = join(assembly_dir, 'contigs.fasta')
+    def run_prep(self, simulation_dir, assembler_dir, coverage_dir, samples, target, threads, **kwargs):
+        contigs = join(assembler_dir, 'contigs.fasta')
         for s in samples:
             r1 = join(simulation_dir, f'{s}_R1.fastq.gz')
             r2 = join(simulation_dir, f'{s}_R2.fastq.gz')

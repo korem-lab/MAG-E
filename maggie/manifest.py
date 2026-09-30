@@ -163,7 +163,7 @@ class Manifest():
         elif assembler and coverage and target:
             tsks = tsks[['coverage_dir']].drop_duplicates()
         elif assembler and target:
-            tsks = tsks[['assembly_dir']].drop_duplicates()
+            tsks = tsks[['assembler_dir']].drop_duplicates()
         else:
             Exception("Invalid query.")
         if tsks.empty:
