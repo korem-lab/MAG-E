@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import pandas as pd
 from os import makedirs, rename
 from os.path import join, exists, abspath, splitext, basename, dirname
-from ..utils import not_empty, soft_link, rm_dir, run
+from ..utils import not_empty, soft_link, rm_dir, run, move, rm_file
 from . import coverage as cv
 import glob
 
