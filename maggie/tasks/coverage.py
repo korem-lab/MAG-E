@@ -110,7 +110,7 @@ class bowtie2Coverage(Coverage):
     def prep_done(self, coverage_dir, **kwargs):
         # check the assembly is present
         files = glob(f'{coverage_dir}/*.bt2') + glob(f'{coverage_dir}/*.bt2l')
-        return all(not_empty(f) for f in files) and files
+        return all(not_empty(f) for f in files) and len(files) > 0
 
 class bowtie2JGICoverage(Coverage):
 
