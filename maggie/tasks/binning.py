@@ -407,7 +407,7 @@ class COMEBinBinner:
         bams = glob.glob(f'{input_dir}/*.bam')
         for b in bams:
             rm_file(b)
-        move(f'{input}/tmp/data_augmentation', f'{output_dir}/bins/data_augmentation')
+        move(f'{input_dir}/tmp/data_augmentation', f'{output_dir}/bins/data_augmentation')
 
     def bins_as_fasta(self, bin_dir):
         bins = glob.glob(join(bin_dir, 'comebin_res/comebin_res_bins/*.fa'))
