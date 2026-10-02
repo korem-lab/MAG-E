@@ -8,9 +8,9 @@ from ..utils import rm_dir, rm_file, not_empty, run, get_temp_local
 
 def sort_bam(bam, coordinate=True, tmp_pref='tmp', threads=8):
     sort_coordinate = '' if coordinate else ' -n '
-    dirname  = get_temp_local()
-    makedirs(dirname, exist_ok=True)
-    run(f'samtools sort -@ {threads} -m 2G -T {dirname} {sort_coordinate} {bam} > {bam}.{tmp_pref}')
+    dirname = get_temp_local()
+    dirname = join(dirname, tmp_pref)
+    run(f'samtools sort -@ {threads} -T {dirname} {sort_coordinate} {bam} > {bam}.{tmp_pref}')
     run(f'mv {bam}.{tmp_pref} {bam}')
 
 def index_bam(bam):
@@ -95,7 +95,7 @@ class bowtie2Coverage(Coverage):
         bam = join(coverage_dir, f'{cov_sample}.bam')
         cmd = f'bowtie2 -p {threads} {options} -x {coverage_dir}/idx -1 {r1} -2 {r2} | samtools view -bS - > {bam}'
         run(cmd)
-        sort_bam(bam, threads)
+        sort_bam(bam, threads=threads)
         index_bam(bam)
 
     def run_prep(self, coverage_dir, assembler_dir, threads, **kwargs):

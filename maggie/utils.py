@@ -20,7 +20,7 @@ def make_bash_template(name, time, mem, thread):
     """
 
 def get_temp_local(subdir='ic2465'):
-    return os.environ['SLURM_JOB_ID']
+    return os.environ['LOCAL_JOB_DIR']
 
 def printit(func):
     def wrapper(*args, **kwargs):
