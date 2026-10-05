@@ -10,6 +10,15 @@ import shutil
 import sys
 from subprocess import run as _run
 
+def bamok(bam_path: str) -> bool:
+    result = _run(
+        ["samtools", "quickcheck", bam_path],
+        capture_output=True,
+        text=True,
+    )
+    return_code = result.returncode
+    return return_code == 0
+
 def make_bash_template(name, time, mem, thread):
     return f"""#!/bin/bash 
 #SBATCH --job-name={name}

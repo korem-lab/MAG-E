@@ -4,7 +4,7 @@ import pandas as pd
 from abc import ABC, abstractmethod
 from os.path import splitext, join, dirname, basename
 from os import makedirs
-from ..utils import rm_dir, rm_file, not_empty, run, get_temp_local
+from ..utils import rm_dir, rm_file, not_empty, run, get_temp_local, bamok
 
 def sort_bam(bam, coordinate=True, tmp_pref='tmp', threads=8):
     sort_coordinate = '' if coordinate else ' -n '
@@ -103,9 +103,14 @@ class bowtie2Coverage(Coverage):
         cmd = f'bowtie2-build --threads {threads} {assembler_dir}/contigs.fasta {coverage_dir}/idx'
         run(cmd)
     
-    def main_done(self, coverage_dir, cov_sample, **kwargs):
-        bam = join(coverage_dir, f'{cov_sample}.bam')
-        return not_empty(bam)
+    def main_done(self, coverage_dir, cov_sample, samples, **kwargs):
+        if cov_sample is not None:
+            bam = join(coverage_dir, f'{cov_sample}.bam')
+            return not_empty(bam) and bamok(bam)
+        else:
+            ne = all(not_empty(join(coverage_dir, f'{s}.bam')) for s in samples) 
+            bo = all(bamok(join(coverage_dir, f'{s}.bam')) for s in samples)
+            return ne and bo 
 
     def prep_done(self, coverage_dir, **kwargs):
         # check the assembly is present
