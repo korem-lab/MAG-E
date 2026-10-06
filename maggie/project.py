@@ -14,9 +14,10 @@ from . import simulation as sm
 from . import evaluation as ev
 from .tasks import assembly as ab, binning as bn, quality_control as qc, coverage as cv, task_utils as tu
 from . import ground_truth as gt 
-from .utils import run_R_script, parse_contig_properties, print_and_return, soft_link
+from .utils import run_R_script, parse_contig_properties, print_and_return, soft_link, parse_read_counts
 from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
 from .manifest import Manifest
+from .evaluation import construct_binning_table, construct_quality_control_tables, construct_genome_metrics
 
 
 class Project:
@@ -140,7 +141,6 @@ class Project:
         manifest.m.coverage_dir.apply(lambda x: os.makedirs(x,exist_ok=True) if not pd.isna(x) else None)
         return manifest
 
-
     def query(self, 
             type, target, of, within, simulations, genomes, evaluations, **kwargs
         ):
@@ -259,119 +259,41 @@ class Project:
         else:
             raise Exception("Invalid options.")
 
-
-    def construct_ground_truth(self, min_contig_len=100, min_pident=99, min_prop=99, max_prop=101):
+    def construct_ground_truth(
+            self, target, assembler, assembler_options, 
+            min_contig_len=100, min_pident=99, min_prop=99, max_prop=101, threads=8
+        ):
         """
         Constructs the ground truth for each assembly. 
         """
         manifest = Manifest(self.config.project_base)
+        if target is not None and assembler is not None:
+            tsks = manifest.get_tasks(assembler, aopt=assembler_options, target=target)
+            assert len(tsks[['target', 'simulation_dir', 'assembler_dir']].drop_duplicates()) == 1
+        else:
+            tsks = manifest.m
         gt.construct_ground_truth(
-            manifest, self.config.ecosystem_db_metadata,
-            min_contig_len, min_pident, min_prop, max_prop
+            tsks, self.config.ecosystem_db_metadata,
+            min_contig_len, min_pident, min_prop, max_prop, threads
         )
-    
-    def calc_per_genome_metrics(self):
-        # Construct the binning table for each binning tasks
+
+    def calculate_metrics(self,
+            level, target, assembler, assembler_options, coverage, coverage_options, 
+            binner, binner_options, binning_mode, binner_set, task_hash
+        ):
+        assert level in ['genome-level', 'contig-level'], Exception('level must be "genome-level" or "contig-level".')
         manifest = Manifest(self.config.project_base)
-        tu.construct_binning_tables(manifest)
+        if task_hash:
+            task = manifest.get_tasks(task_hash)
+        else:
+            task = manifest.get_tasks(assembler, assembler_options, coverage, coverage_options, binner, binner_options, binning_mode, binner_set, target)
+        assert len(task) == 1, Exception("Invalid task specification: more than one task matched description.")
 
-        # Build the reports. There is a report for each assembler, binner pair. 
-        # A report contains the relevant information (genome, abundance, assigned bin, bin quality control)
-        # for all (assembler, binner)-combo bin tasks. These reports are used to calculate the genome metrics.
-        os.makedirs(self.config.evaluation_dir, exist_ok=True)
-        bnab = manifest[['binner', 'assembler', 'is_refiner']].dropna().drop_duplicates().values
-        rfab = manifest[['refiner', 'assembler', 'is_refiner']].dropna().drop_duplicates().values
-        combos = np.vstack([bnab, rfab])
-        for i in range(combos.shape[0]):
-            bn, ab, is_refiner = combos[i]
-            if is_refiner:
-                _mnfst = manifest.loc[(manifest.refiner == bn) & (manifest.assembler == ab)]
-            else:
-                _mnfst = manifest.loc[(manifest.binner == bn) & (manifest.assembler == ab)]
-            rprt = ev.construct_report(_mnfst, add_cp=False, read_counts=self.config.read_counts)
-            rprt.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}_REPORT.parquet'))
-
-        # Compute the per-genome metrics
-        for i in range(combos.shape[0]):
-            bn, ab, _ = combos[i]
-            rprt = pd.read_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}_REPORT.parquet'))
-            gm = ev.construct_genome_metrics(rprt)
-            # these got dropped when constructing the genome metrics, all were doing here is adding them back
-            gm = ev.add_report_data(rprt, gm, manifest.copy())
-            gm.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}.genome_metrics.parquet'))
-
-    def calc_contig_level_metrics(self, precision, recall, drop_raw_property=True):
-        manifest = Manifest(self.config.project_base)
-        # Add ground truth genome origin to the contig properties
-        asm_tasks = manifest.loc[['assembler', 'target_sample', 'assembly_options', 'assembler_dir']].drop_duplicates()
-        asm_tasks = asm_tasks[asm_tasks.assembly_options == 'default']
-        cp_df_dataset = list()
-        for i in range(len(asm_tasks)):
-            t = asm_tasks.iloc[i,:]
-            cp_df = parse_contig_properties(join(t.assembler_dir, f'{t.target_sample}_contig_properties.csv'))
-            gt_df = pd.read_csv(join(t.assembler_dir, f'{t.target_sample}_gt_table.csv'))
-            cp_df = pd.merge(cp_df, gt_df[['genome', 'key']], on='key')
-            cp_df_dataset.append(cp_df)
-        cp_df_dataset = pd.concat(cp_df_dataset)
-        cp_df_dataset.reset_index(drop=True, inplace=True)
-
-        # collect the genome metrics over the default tasks
-        dflt_bin_tasks = manifest[
-            (manifest.binner_options == 'default') & (manifest.assembly_options == 'default')
-        ]
-        gnm_metrics = ev.parse_genome_measurement_files(
-            join(self.config.evaluation_dir, f'*.genome_metrics.parquet')
-        )
-        gnm_metrics = gnm_metrics.loc[gnm_metrics.task_hash.isin(dflt_bin_tasks.task_hash)]
-
-        # get the recoverable set and filter to just those 
-        _, rcvgnms = ev.recoverable_genome_set(gnm_metrics, recall, precision)
-        cp_df_dataset = pd.merge(cp_df_dataset, rcvgnms, on=['sample', 'genome'])
-
-        # iterate over continuous propertis and make a percentile form
-        for prop in [e for e in cp_df_dataset.columns if e.startswith('prop_c')]:
-            cp_df_dataset = pd.merge(
-                cp_df_dataset, ev.to_percentiles(cp_df_dataset[[prop, 'contig_length']]),
-                left_index=True, right_index=True, how='left'
-            )
-            if drop_raw_property:
-                cp_df_dataset.drop(prop, axis=1, inplace=True)
-        cp_df_dataset.to_parquet(self.config.evaluation_dir, 'processed_contig_properties.parquet')
-
-        # break the eval up by binner and assembler combos
-        bnab = manifest[['binner', 'assembler', 'is_refiner']].dropna().drop_duplicates().values
-        rfab = manifest[['refiner', 'assembler', 'is_refiner']].dropna().drop_duplicates().values
-        combos = np.vstack([bnab, rfab])
-        for i in range(combos.shape[0]):
-            bn, ab, is_refiner = combos[i]
-            if is_refiner:
-                _mnfst = manifest.loc[(manifest.refiner == bn) & (manifest.assembler == ab)]
-            else:
-                _mnfst = manifest.loc[(manifest.binner == bn) & (manifest.assembler == ab)]
-            rprt = ev.construct_report(_mnfst, add_cp=True, add_abundance=False)
-            rprt.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}_CPREPORT.parquet'))
-            ev.construct_contig_property_metrics(
-                join(self.config.evaluation_dir, f'{ab}_{bn}_CPREPORT.parquet'), rcvgnms, manifest
-            )
-
-    def evaluate_pipelines(self, precision, recall, plots=False):
-        # Write the set of recoverable genome scores to a csv for analysis in R
-        os.makedirs(join(self.config.evaluation_dir, 'LMM'), exist_ok=True)
-        gnm_metrics = ev.parse_genome_measurement_files(
-            glob.glob(join(self.config.evaluation_dir, '*.genome_metrics.parquet')), min_cov=0
-        )
-        scores, _ = ev.recoverable_genome_set(gnm_metrics, 0.2, 0.2)
-        scores = scores[['binning_mode', 'binner', 'assembler', 'genome', 'is_refiner', 'sample', 'metric', 'value']]
-        scores.to_csv(join(self.config.evaluation_dir, 'LMM/per_genome_metrics.csv'), index=None)
-
-        # Run the LMM and write output to disk
-        run_R_script('LMM_optimal_mag_pipeline', join(self.config.evaluation_dir, 'LMM'), 'true')
-        ## plot data if needed
-        #if plots:
-        #    for by in ['binner', 'binning-mode', 'assembler']:
-        #        for metric in ['fscore', 'precision', 'recall']:
-        #            order = ['MaxBin2', 'VAMB', 'CONCOCT', 'METABAT2', 'SemiBin2', 'COMEBin']
-        #            ax = plot_pipeline_performance_model(
-        #                pd.read_csv(join(self.config.evaluation_dir, 'LMM', f'all_pipelines_{metric}.csv')), by=by, y_name=metric, order=order
-        #            )
-        #            plot_unlabelled_version(ax, join(utls.MANU_FIGS, 'Fig2', 'MAG_pipeline_LMM_fscore_binner'),ylower=-0.05, yupper=1.3,show=False)
+        if level == 'genome-level':
+            bintbl = construct_binning_table(task)
+            qctbls = construct_quality_control_tables(task)
+            read_count = parse_read_counts(self.config.read_counts)
+            read_count = read_count.loc[target]
+            ecodb = pd.read_csv(self.config.ecosystem_db_metadata)
+            spec = pd.read_csv(join(self.config.simulation_dir, f'{target}_metagenome_spec.csv'))
+            genome_metrics = construct_genome_metrics(bintbl, qctbls, read_count, ecodb, spec)

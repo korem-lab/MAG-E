@@ -19,7 +19,7 @@ class QCTool(ABC):
         ...
 
     @abstractmethod 
-    def cleanup(self, binner_dir, **kwargs):
+    def to_table(self, binner_dir, **kwargs):
         ...
 
     @abstractmethod 
@@ -34,27 +34,29 @@ class CheckM2QCTool(QCTool):
 
     def run_main(self, binner_dir, threads, **kwargs):
         bin_dir = join(binner_dir, 'output/bins')
-        binner_dir = join(binner_dir, f'output/{self.name}')
-        makedirs(binner_dir, exist_ok=True)
-        err_log = join(dirname(binner_dir), 'checkM2err.log')
+        out_dir = join(binner_dir, f'output/{self.name}')
+        makedirs(out_dir, exist_ok=True)
+        err_log = join(dirname(out_dir), 'checkM2err.log')
         cmd = f'{self.exec} predict -t {threads} --force -x fasta ' \
-        f'--input {bin_dir} --output-directory {binner_dir} --database_path {self.database_path} 2> {err_log}'
+        f'--input {bin_dir} --output-directory {out_dir} --database_path {self.database_path} 2> {err_log}'
         run(cmd)
 
-    def cleanup(self, binner_dir, **kwargs):
+    def to_table(self, binner_dir, **kwargs):
         result_dir = join(binner_dir, f'output/{self.name}')
         res = pd.read_csv(join(result_dir, 'quality_report.tsv'),sep='\t')
         res.rename({'Name':'bin', 'Completeness':'completeness','Contamination':'contamination'},axis=1,inplace=True)
         res= res.add_prefix(f'{self.name}_')
         res.rename({f'{self.name}_bin':'bin'},axis=1,inplace=True)
+        res = res[self.qc_measures]
+        res.to_csv(join(binner_dir, 'output', f'{self.name}_quality_control_table.csv'), index=None)
         return res
 
     def prep_done(self, **kwargs):
         return True
 
     def main_done(self, binner_dir, **kwargs):
-        results_dir = join(binner_dir, f'output/{self.name}')
-        return not_empty(join(results_dir, 'quality_report.tsv'))
+        out_dir= join(binner_dir, f'output/{self.name}')
+        return not_empty(join(out_dir, 'quality_report.tsv'))
     
 class GUNCQCTool(QCTool):
     name = 'GUNC'
@@ -64,23 +66,25 @@ class GUNCQCTool(QCTool):
 
     def run_main(self, binner_dir, threads, **kwargs):
         bin_dir = join(binner_dir, 'output/bins')
-        binner_dir = join(binner_dir, f'output/{self.name}')
-        makedirs(binner_dir, exist_ok=True)
-        cmd = f'{self.exec} run -t {threads} --input_dir {bin_dir} --file_suffix fasta -r {self.database_path} --out_dir {binner_dir} 2> {binner_dir}/GUNCerr.log'
+        out_dir = join(binner_dir, f'output/{self.name}')
+        makedirs(out_dir, exist_ok=True)
+        cmd = f'{self.exec} run -t {threads} --input_dir {bin_dir} --file_suffix fasta -r {self.database_path} --out_dir {out_dir} 2> {out_dir}/GUNCerr.log'
         run(cmd)
 
-    def cleanup(self, binner_dir, **kwargs):
-        results_dir = join(binner_dir, f'output/{self.name}')
-        res = pd.read_csv(join(results_dir,'GUNC.progenomes_2.1.maxCSS_level.tsv'),sep='\t')
+    def to_table(self, binner_dir, **kwargs):
+        out_dir = join(binner_dir, f'output/{self.name}')
+        res = pd.read_csv(join(out_dir,'GUNC.progenomes_2.1.maxCSS_level.tsv'),sep='\t')
         res.rename({'genome':'bin','pass.GUNC':'isPass'},axis=1,inplace=True)
         res['bin'] = res['bin'].apply(lambda x: x[:-1] if x.endswith('.') else x)
         res = res.add_prefix(f'{self.name}_')
         res.rename({f'{self.name}_bin':'bin'},axis=1,inplace=True)
+        res = res[self.qc_measures]
+        res.to_csv(join(binner_dir, 'output', f'{self.name}_quality_control_table.csv'), index=None)
         return res
 
     def prep_done(self, **kwargs):
         return True
 
     def main_done(self, binner_dir, **kwargs):
-        results_dir = join(binner_dir, f'output/{self.name}')
-        return not_empty(join(results_dir,'GUNC.progenomes_2.1.maxCSS_level.tsv'))
+        out_dir = join(binner_dir, f'output/{self.name}')
+        return not_empty(join(out_dir,'GUNC.progenomes_2.1.maxCSS_level.tsv'))

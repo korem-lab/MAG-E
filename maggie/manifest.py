@@ -141,7 +141,8 @@ class Manifest():
         self.m['samples'] = list(map(pairs['samples'].get, zip(self.m['binning_mode'], self.m['target'])))
 
     def get_tasks(self, 
-            assembler, aopt, coverage, copt, binner, bopt, binning_mode, binner_set, target, cov_sample
+            assembler=None, aopt=None, coverage=None, copt=None, binner=None, 
+            bopt=None, binning_mode=None, binner_set=None, target=None, cov_sample=None
         ):
         flt = lambda x,y: self.m[x] == y if y is not None else pd.Series(True, index=self.m.index)
         ms_flt = lambda cs: self.m.samples.apply(lambda x: cs in x) if cs is not None else pd.Series(True, index=self.m.index)

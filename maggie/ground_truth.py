@@ -5,7 +5,6 @@ import numpy as np
 from subprocess import run
 import re
 import glob
-from .utils import manifest_get, parse_maggie_db
 
 def make_blastdb(ref_genomes, blast_db, title):
     run(f'zcat {ref_genomes} | makeblastdb -dbtype nucl -in - -out {blast_db} -title {title}',shell=True)
@@ -14,14 +13,14 @@ def blastn(blast_db, contigs, out_file, threads=8):
     cmd = f'blastn -db {blast_db} -outfmt "6 qacc sacc evalue qstart qend qlen sstart send slen pident nident length" -query {contigs} -out {out_file} -num_threads {threads}'
     run(cmd, shell=True)
 
-def get_blast_file(sample,contigs,genomes, outdir, force=False):
+def get_blast_file(target,contigs,genomes, outdir, force=False, threads=8):
     genomes_str = ' '.join(genomes)
-    blast_results = os.path.join(outdir, f'{sample}_blast_results.txt')
+    blast_results = os.path.join(outdir, f'{target}_blast_results.txt')
     if os.path.exists(blast_results) and not force:
         return load_blast_results(blast_results)
-    db_name = os.path.join(outdir, f'bdb_{sample}')
-    make_blastdb(genomes_str, db_name, sample)
-    blastn(db_name, contigs, blast_results, threads=4)
+    db_name = os.path.join(outdir, f'bdb_{target}')
+    make_blastdb(genomes_str, db_name, target)
+    blastn(db_name, contigs, blast_results, threads=threads)
     return load_blast_results(blast_results)
 
 def filter_blast_hits(hits, min_contig_len=100, min_pident=99, min_prop=99,max_prop=101):
@@ -49,34 +48,20 @@ def load_blast_results(file):
     hits['ref'] = hits.ref.apply(lambda x: x.replace('.fa',''))
     return hits
 
-def _construct_ground_truth(sample, straindb, hits):
-    # Initialize ground truth matrix
-    isolate_genomes = set(straindb.genome[straindb.GenomeType == 'Isolate'])
-    hits['sample'] = sample
-    hits.drop(['evalue', 'contig_start', 'contig_end'],axis=1, inplace=True)
-    hits['key']  = hits.contig.apply(lambda x : f'{sample}-{x}')
-    hits['is_isolate'] = hits.genome.isin(isolate_genomes)
-    hits['genome_length'] = hits.genome.map(straindb[['genome', 'Length']].set_index('genome').Length)
-    return hits
-
-def retreive_contig_names(hits):
-    return sorted(hits.contig.unique())
-
 def construct_ground_truth(
-        manifest, maggie_db_table, min_contig_len, min_pident, min_prop, max_prop
+        tasks, min_contig_len, min_pident, min_prop, max_prop, threads=8
     ):
-    asm_tasks = set()
 
     # extract assembly tasks
-    asm_tasks = manifest[~manifest.is_refiner][['target_sample', 'simulation_dir', 'assembler_dir']]
-    asm_tasks.drop_duplicates(inplace=True)
-    
+    asm_tasks = tasks[['target', 'simulation_dir', 'assembler_dir']].drop_duplicates()
     for i in range(len(asm_tasks)):
         t = asm_tasks.iloc[i,:]
-        genomes = glob.glob(join(t.simulation_dir, f'iss_{t.target_sample}_genomes/*.fasta.gz'))
-        contigs = join(t.assembler_dir, f'{t.target_sample}.fasta')
-        hits = get_blast_file(t.target_sample, contigs, genomes, t.assembler_dir)
+        print(t.target)
+        genomes = glob.glob(join(t.simulation_dir, f'iss_{t.target}_genomes/*.fasta.gz'))
+        contigs = join(t.assembler_dir, f'contigs.fasta')
+        hits = get_blast_file(t.target, contigs, genomes, t.assembler_dir,threads=threads)
         hits = filter_blast_hits(hits, min_contig_len, min_pident, min_prop, max_prop)
-        db_table = parse_maggie_db(maggie_db_table)
-        gt = _construct_ground_truth(t.target_sample, db_table, hits)
-        gt.to_csv(os.path.join(t.assembler_dir, f'{t.target_sample}_gt_table.csv'), index=None)
+        hits['target'] = t.target 
+        hits.drop(['evalue', 'contig_start', 'contig_end'],axis=1, inplace=True)
+        hits['key']  = hits.contig.apply(lambda x : f'{t.target}-{x}')
+        hits.to_csv(os.path.join(t.assembler_dir, f'ground_truth_table.csv'), index=None)

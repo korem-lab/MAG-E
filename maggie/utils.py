@@ -82,8 +82,8 @@ def parse_maggie_db(file):
         
 def parse_read_counts(file):
     df = pd.read_csv(file)
-    assert ['sample', 'count'] == df.columns.to_list()
-    df.set_index('sample',inplace=True)
+    assert ['target', 'count'] == df.columns.to_list()
+    df.set_index('target',inplace=True)
     return df
 
 def parse_contig_properties(file):

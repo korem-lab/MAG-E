@@ -249,18 +249,50 @@ def run(
 
 @app.command()
 def construct_ground_truth(
+    target: str = typer.Option(None, help='Target sample.'),
+    assembler: str = typer.Option(None, help='An assembler in config.'),
+    assembler_options: str = typer.Option('default', help='CLI option string.'),
     min_contig_len: int = typer.Option(100, help='Minimum length of contigs that can contribute to ground truth metrics.'), 
     min_pident: float = typer.Option(99, help='Minimum percent identity for a ground truth match'),
     min_aln_prop: float = typer.Option(99, help='alignment_length >= contig_length*(min_aln_prop) for a ground truth match'),
     max_aln_prop: float = typer.Option(101, help='alignment_length <= contig_length*(max_aln_prop) for a ground truth match'),
-    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project'),
+    threads: int = typer.Option(8, help='threads')
 ):
     """
     Constructs the ground truth for each assembly.
     """
     _, directory = _get_project(project_name)
     project = Project.load(directory)
-    project.construct_ground_truth(min_contig_len, min_pident, min_aln_prop, max_aln_prop)
+    project.construct_ground_truth(target, assembler, assembler_options, min_contig_len, min_pident, min_aln_prop, max_aln_prop, threads)
+
+@app.command()
+def calculate_metrics(
+    level: str = typer.Argument(...,help='Either genome-level or contig-level.'),
+    target: str = typer.Option(None, help='Target sample.'),
+    assembler: str = typer.Option(None, help='An assembler in config.'),
+    assembler_options: str = typer.Option('default', help='CLI option string.'),
+    binner: str = typer.Option(None, help='A binner in config.'),
+    binner_options: str = typer.Option('default', help='CLI option string.'),
+    binning_mode: str = typer.Option(None, help='Binning mode in config'),
+    coverage: str = typer.Option(None, help='A coverage in config.'),
+    coverage_options: str = typer.Option('default', help='CLI option string'),
+    refiner: str = typer.Option(None, help='A refiner in.'),
+    refiner_options: str = typer.Option('default', help='CLI option string'),
+    binner_set: str = typer.Option(None, help='String specifying the binner set for refiners.'),
+    task_hash: str = typer.Option(None, help='Hash name of the task'),
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
+):
+    if refiner:
+        binner = refiner
+        binner_options = refiner_options
+        assert (binner_set)
+    _, directory = _get_project(project_name)
+    project = Project.load(directory)
+    project.calculate_metrics(
+        level, target, assembler, assembler_options, coverage, coverage_options, 
+        binner, binner_options, binning_mode, binner_set, task_hash
+    )
 
 
 @app.command()
