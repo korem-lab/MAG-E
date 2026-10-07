@@ -36,7 +36,7 @@ def construct_binning_table(t):
 
     # add the representative bin to the binning table
     reprmap = prod[['genome', 'representative_bin']].drop_duplicates()
-    reprmap = reprmap.set_index('genome', inplace=True)
+    reprmap.set_index('genome', inplace=True)
     binning_table['representative_bin'] = binning_table.genome.map(reprmap.representative_bin)
 
     # compute contig-level TP and FN
@@ -58,10 +58,6 @@ def construct_binning_table(t):
     fp['ctgFP'] = True
     fp['ctgTP'] = False 
     fp['ctgFN'] = False
-    # add isolate information to the genome
-    isomap = ground_truth[['genome','is_isolate']].drop_duplicates()
-    isomap.set_index('genome',inplace=True)
-    fp['is_isolate'] = fp.genome.map(isomap.is_isolate)
     binning_table = pd.concat([binning_table, fp])
 
     # Write and return
@@ -120,6 +116,9 @@ def compute_contig_fp(df):
 def construct_genome_metrics(binning_table, qctbls, read_count, ecodb, spec):
 
     # Compute the per-genome precision, recall, fscore metrics
+    binning_table['genome_length'] = binning_table.genome.map(
+        ecodb[['genome','Length']].set_index('genome').Length
+    )
     metrics = compute_Fscore_metrics(binning_table, groupby=['genome'])
 
     # add quality control values for each bin
@@ -134,11 +133,11 @@ def construct_genome_metrics(binning_table, qctbls, read_count, ecodb, spec):
     metrics['genome_length'] = metrics.genome.map(
         ecodb[['genome','Length']].set_index('genome').Length
     )
-    metrics['genome_abundance'] = metrics.genome.map(
-        spec[['genome', 'StrainAbund']].set_index('genome').StrainAbund
-    )
-    metrics['genome_n_reads'] = metrics.genome_abundance * read_count
-    metrics['genome_coverage'] = (metrics.genome_n_reads * 250) / metrics.genome_length
+    #metrics['genome_abundance'] = metrics.genome.map(
+    #    spec[['genome', 'StrainAbund']].set_index('genome').StrainAbund
+    #)
+    #metrics['genome_n_reads'] = metrics.genome_abundance * read_count
+    #metrics['genome_coverage'] = (metrics.genome_n_reads * 250) / metrics.genome_length
     # E.G multi-strain, GC, TRNA etc etc
     return metrics
 
@@ -259,10 +258,10 @@ def recall(x, cov_based):
         # x.TP == True if the contig is in the bin representing the genome.
         # i.e, the entire contig is a TP. But, we need to go through all the 
         # TP-contigs, can calculate the non-overlapping basepairs. This is the bp-tp.
-        tp_contigs = x[x.TP]
+        tp_contigs = x[x.ctgTP]
         if tp_contigs.empty:
             return 0
-        tp = x[x.TP].groupby('ref').apply(calculate_coverage).sum()
+        tp = x[x.ctgTP].groupby('ref').apply(calculate_coverage).sum()
 
         # the false negative bp's are every part of the genome that's not covered
         # i.e fn genome len - tp. Since recall is tp/(tp+fn), we return tp/genome len
@@ -272,26 +271,26 @@ def recall(x, cov_based):
         # assembl-able, mappable portion of the metagenome. We call a FNs bp from 
         # contigs that are not assigned to the representative bin, rather than
         # the part of the genome not covered. We also don't do TP as coverage based.  
-        denom = (x.TP * x.contig_length).sum() + (x.FN * x.contig_length).sum()
+        denom = (x.ctgTP * x.contig_length).sum() + (x.ctgFN * x.contig_length).sum()
         if denom == 0:
             return 0
-        return (x.TP * x.contig_length).sum() / denom
+        return (x.ctgTP * x.contig_length).sum() / denom
 
 def precision(x, cov_based):
     if cov_based:
-        tp_contigs = x[x.TP]
+        tp_contigs = x[x.ctgTP]
         if tp_contigs.empty:
             return 0
-        tp = x[x.TP].groupby('ref').apply(calculate_coverage).sum()
-        denom = tp + (x.FP * x.contig_length).sum()
+        tp = x[x.ctgTP].groupby('ref').apply(calculate_coverage).sum()
+        denom = tp + (x.ctgFP * x.contig_length).sum()
         if denom == 0:
             return 1
         return tp / denom
     else:
-        denom = (x.TP * x.contig_length).sum() + (x.FP * x.contig_length).sum()
+        denom = (x.ctgTP * x.contig_length).sum() + (x.ctgFP * x.contig_length).sum()
         if denom == 0:
             return 1
-        return (x.TP * x.contig_length).sum() / denom
+        return (x.ctgTP * x.contig_length).sum() / denom
 
 def fscore(x, cov_based):
     p = precision(x, cov_based)

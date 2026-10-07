@@ -294,7 +294,7 @@ class Project:
             bintbl = construct_binning_table(task)
             qctbls = construct_quality_control_tables(task)
             read_count = parse_read_counts(self.config.read_counts)
-            read_count = read_count.loc[target]
+            read_count = read_count.loc[target].item()
             ecodb = pd.read_csv(self.config.ecosystem_db_metadata)
             spec = pd.read_csv(join(self.config.simulation_dir, f'{target}_metagenome_spec.csv'))
             genome_metrics = construct_genome_metrics(bintbl, qctbls, read_count, ecodb, spec)
