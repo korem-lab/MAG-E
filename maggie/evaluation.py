@@ -66,6 +66,7 @@ def construct_binning_table(t):
 
 def construct_quality_control_tables(t):
     tables = list()
+    return []
     for tool in t.qctools:
         tool = getattr(qc, f'{tool}QCTool')
         tables.append(tool.to_table(t.binner_dir))

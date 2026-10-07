@@ -273,8 +273,7 @@ class Project:
         else:
             tsks = manifest.m
         gt.construct_ground_truth(
-            tsks, self.config.ecosystem_db_metadata,
-            min_contig_len, min_pident, min_prop, max_prop, threads
+            tsks, min_contig_len, min_pident, min_prop, max_prop, threads
         )
 
     def calculate_metrics(self,
@@ -296,11 +295,11 @@ class Project:
             read_count = parse_read_counts(self.config.read_counts)
             read_count = read_count.loc[target].item()
             ecodb = pd.read_csv(self.config.ecosystem_db_metadata)
-            spec = pd.read_csv(join(self.config.simulation_dir, f'{target}_metagenome_spec.csv'))
-            genome_metrics = construct_genome_metrics(bintbl, qctbls, read_count, ecodb, spec)
+            #spec = pd.read_csv(join(self.config.simulation_dir, f'{target}_metagenome_spec.csv'))
+            genome_metrics = construct_genome_metrics(bintbl, qctbls, read_count, ecodb, pd.DataFrame())
             asm = self.get_name(task.assembler, task.assembler_summary_name)
             cov = self.get_name(task.coverage, task.coverage_summary_name)
-            bin = self.get_name(task.binner, task.binner_summary_name, task.binner_set)
+            bin = self.get_name(task.binner, task.binner_summary_name)
             genome_metrics = genome_metrics.assign(
                 assembler=asm, coverage=cov, binner=bin, binning_mode=binning_mode, task_hash=task_hash
             )
