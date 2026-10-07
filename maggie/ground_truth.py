@@ -44,8 +44,8 @@ def load_blast_results(file):
             'contig_length', 'ref_start', 'ref_end', 'ref_length',
             'pident', 'nident', 'aln_length'
         ]
-    hits['genome'] = hits.ref.apply(lambda x: x.split('_')[0])
     hits['ref'] = hits.ref.apply(lambda x: x.replace('.fa',''))
+    hits['genome'] = hits.ref.apply(lambda x: x.split('_')[0])
     return hits
 
 def construct_ground_truth(
