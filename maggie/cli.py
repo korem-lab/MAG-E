@@ -294,6 +294,15 @@ def calculate_metrics(
         binner, binner_options, binning_mode, binner_set, task_hash
     )
 
+@app.command()
+def evaluate(
+    level: str = typer.Argument(...,help='Either genome-level or contig-level.'),
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
+):
+    _, directory = _get_project(project_name)
+    project = Project.load(directory)
+    project.run_evaluation(level)
+
 
 @app.command()
 def calc_per_genome_metrics(

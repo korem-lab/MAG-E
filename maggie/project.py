@@ -288,6 +288,7 @@ class Project:
         else:
             task = manifest.get_tasks(assembler, assembler_options, coverage, coverage_options, binner, binner_options, binning_mode, binner_set, target)
         assert len(task) == 1, Exception("Invalid task specification: more than one task matched description.")
+        task = task.iloc[0]
 
         if level == 'genome-level':
             bintbl = construct_binning_table(task)
@@ -297,3 +298,30 @@ class Project:
             ecodb = pd.read_csv(self.config.ecosystem_db_metadata)
             spec = pd.read_csv(join(self.config.simulation_dir, f'{target}_metagenome_spec.csv'))
             genome_metrics = construct_genome_metrics(bintbl, qctbls, read_count, ecodb, spec)
+            asm = self.get_name(task.assembler, task.assembler_summary_name)
+            cov = self.get_name(task.coverage, task.coverage_summary_name)
+            bin = self.get_name(task.binner, task.binner_summary_name, task.binner_set)
+            genome_metrics = genome_metrics.assign(
+                assembler=asm, coverage=cov, binner=bin, binning_mode=binning_mode, task_hash=task_hash
+            )
+            genome_metrics.to_parquet(
+                join(task.binner_dir, 'genome_metrics.pqt')
+            )
+
+    def get_name(self, tool, sname, bs=None):
+        bs='('+'-'.join(bs)+')' if bs else ''
+        return tool if sname == 1 else f'{tool}({sname}){bs}'
+
+    def run_evaluation(self, level):
+        manifest = Manifest(self.config.project_base)
+        if level == 'genome-level':
+            # Concat all the genome metrics 
+            if exists(join(self.config.evaluation_dir, 'genome_metrics.pqt')):
+                mets = pd.read_parquet(join(self.config.evaluation_dir, 'genome_metrics.pqt'))
+            else:
+                mets = pd.concat(
+                    [pd.read_parquet(join(d, 'genome_metrics.pqt')) for d in manifest.m.binner_dir]
+                )
+                mets.to_parquet(self.config.evaluation_dir, 'genome_metrics.pqt')
+
+            #llmcalls

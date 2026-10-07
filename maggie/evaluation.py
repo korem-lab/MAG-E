@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import glob
-from .tasks import quality_control as qc, get_binner_coordinate, binner_coordinate
+from .tasks import quality_control as qc
 from os.path import join, exists, basename
 from .utils import parse_read_counts, parse_quality_control_table, get_contig_name, remove_fasta_ext
 
@@ -10,7 +10,7 @@ def construct_binning_table(t):
     btfl = f'{t.binner_dir}/output/binning_table.pqt'
     if exists(btfl):
         return pd.read_parquet(btfl)
-    bins = glob.glob(join(t.binner_dir, 'outputs/bins/*.fasta'))
+    bins = glob.glob(join(t.binner_dir, 'output/bins/*.fasta'))
 
     ground_truth = pd.read_csv(join(t.assembler_dir, f'ground_truth_table.csv'))
     records = list()
@@ -18,18 +18,16 @@ def construct_binning_table(t):
         with open(bin) as f:
             contigs = [get_contig_name(e) for e in f if e.startswith('>')]
             records += [
-                (*get_binner_coordinate(t), t.target, f'{t.target}-{e}', remove_fasta_ext(basename(bin)), e) 
-                for e in contigs
+                (t.target, f'{t.target}-{e}', remove_fasta_ext(basename(bin)), e) for e in contigs
             ]
     # filter for contigs that have been measured
-    binned_contigs = pd.DataFrame(records, columns=[*list(binner_coordinate), 'target', 'key', 'bin', 'contig'])
+    binned_contigs = pd.DataFrame(records, columns=['target', 'key', 'bin', 'contig'])
     binned_contigs = binned_contigs.loc[binned_contigs.key.isin(ground_truth.key), :]
     binned_contigs.drop(['target', 'contig'],axis=1,inplace=True) # which contigs are in which bins
 
     # build binning table from ground truth
     binning_table = ground_truth[
-        ['contig','contig_length','genome', 'sample', 'key','is_isolate', 
-        'ref', 'ref_start', 'ref_end', 'genome_length']
+        ['contig','contig_length','genome', 'target', 'key', 'ref', 'ref_start', 'ref_end']
     ].drop_duplicates()
 
     # Find the representative bin of each genome
@@ -56,7 +54,7 @@ def construct_binning_table(t):
     # If so, not a FP, if not its a FP. Since this is requires bin groupings, and a scan through ground truth
     # this requires a separate operation.
     fp = prod.groupby('bin').apply(compute_contig_fp).reset_index(drop=True)
-    fp = fp[['genome','contig','contig_length','sample','key', 'ref', 'ref_start', 'ref_end', 'genome_length']].drop_duplicates()
+    fp = fp[['contig','contig_length','genome','target','key', 'ref', 'ref_start', 'ref_end']].drop_duplicates()
     fp['ctgFP'] = True
     fp['ctgTP'] = False 
     fp['ctgFN'] = False
@@ -112,7 +110,7 @@ def compute_contig_fp(df):
     # and it should be counted as a false positive for the genome the bin does represent.
     filt=df.groupby('genome').filter(lambda x: all(x['bin'] == x['representative_bin']))
     if filt.empty:
-        return pd.DataFrame(columns=['genome','contig','contig_length','sample','key'])
+        return pd.DataFrame(columns=['genome','contig','contig_length','target','key'])
     fps=filt.groupby('genome').apply(lambda x: df[~df.key.isin(x.key)])
     fps.drop('genome',axis=1,inplace=True)
     fps=fps.reset_index()
