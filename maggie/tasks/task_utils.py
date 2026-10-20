@@ -91,27 +91,11 @@ def run_quality_control(task, qctool, threads=8, force=False, check=False):
     qctool = getattr(qc, f'{qctool}QCTool')()
     kwargs = task.to_dict() | {'threads':threads}
     if check:
-        qctool.main_done(**kwargs)
+        return qctool.main_done(**kwargs)
     if force or not qctool.main_done(**kwargs):
         qctool.run_main(**kwargs)
 
-#def run_quality_control(manifest, force=False, threads=8):
-#    for i in range(len(manifest)):
-#        t = manifest.loc[i,:]
-#        tables = list()
-#        for q in t.qctools:
-#            q = getattr(qc, q+'QCTool')()
-#            if not q.has_bins(t.binner_dir):
-#                continue
-#            if not q.done(t.binner_dir):
-#                q.run(**(t.to_dict() | {'threads':threads}))
-#            tables.append(q.to_qctable(**(t.to_dict() | {'threads':threads})))
-#        if tables:
-#            qc_table = reduce(lambda left,right: pd.merge(left,right,on='bin'),tables)
-#            qc_table['task_hash'] = t.task_hash
-#            qc_table.to_csv(join(t.binner_dir, 'output/qc_table.csv'), index=None)
 
-#
 #def run_refine_tasks(manifest, run_only=None, force_refine=False, threads=8):
 #    refine_tasks = manifest[manifest.is_refiner] 
 #    bin_tasks = manifest[~manifest.is_refiner]

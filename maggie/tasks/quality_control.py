@@ -28,7 +28,7 @@ class QCTool(ABC):
 
 class CheckM2QCTool(QCTool):
     name = 'CheckM2'
-    exec = '/insomnia001/depts/pmg/KoremLab/miniforge/envs/checkm2/bin/checkm2'
+    exec = 'mamba run -n checkm2 checkm2'
     qc_measures = [f'{name}_completeness', f'{name}_contamination']
     database_path = '/insomnia001/depts/pmg/KoremLab/Databases/checkm2/uniref100.KO.1.dmnd'
 

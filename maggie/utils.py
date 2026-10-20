@@ -52,12 +52,6 @@ def print_and_return(s):
     print(s,flush=True,end='')
     return s
 
-def run_R_script(script, *args):
-    dir = Path(__file__).parent
-    cmd = f'Rscript {dir}/R/{script}.R {" ".join(args)}'
-    print(cmd)
-    run(cmd)
-
 def write_done_flag(binner_dir, name):
     Path(os.path.join(binner_dir, f'{name}_DONE')).touch()
 

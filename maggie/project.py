@@ -14,10 +14,9 @@ from . import simulation as sm
 from . import evaluation as ev
 from .tasks import assembly as ab, binning as bn, quality_control as qc, coverage as cv, task_utils as tu
 from . import ground_truth as gt 
-from .utils import run_R_script, parse_contig_properties, print_and_return, soft_link, parse_read_counts
+from .utils import parse_contig_properties, print_and_return, soft_link, parse_read_counts
 from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
 from .manifest import Manifest
-from .evaluation import construct_binning_table, construct_quality_control_tables, construct_genome_metrics
 
 
 class Project:
@@ -98,7 +97,7 @@ class Project:
         # Make a Sylph sketch (paired.sylsp) of each sample.
         ms.construct_sylphsp(self.config.samples_dir, self.config.sylsp_dir, self.config.prefix1, t=threads,c=c)
 
-        ## Sylph query and profile each sample.
+        # Sylph query and profile each sample.
         ms.sylph_profile(self.config.sylsp_dir, self.config.ecosystem_db, self.config.simulation_dir, 'repr', t=threads)
         ms.sylph_query(self.config.sylsp_dir, self.config.ecosystem_db, self.config.simulation_dir, 'all', t=threads)
 
@@ -106,6 +105,7 @@ class Project:
         profiles = sorted(glob.glob(join(self.config.simulation_dir, '*_sylph_profile.tsv')))
         queries = sorted(glob.glob(join(self.config.simulation_dir, '*_sylph_query.tsv')))
         for profile, query in zip(profiles, queries):
+            print(profile, query)
             ms.construct_metagenomic_specification(self.config.simulation_dir, self.config.ecosystem_db_metadata, profile, query, seed)
 
     def simulate_mgx(self, threads, n_reads, seed, print_script=False):
@@ -283,25 +283,25 @@ class Project:
         assert level in ['genome-level', 'contig-level'], Exception('level must be "genome-level" or "contig-level".')
         manifest = Manifest(self.config.project_base)
         if task_hash:
-            task = manifest.get_tasks(task_hash)
+            task = manifest.get_tasks(task_hash=task_hash)
         else:
             task = manifest.get_tasks(assembler, assembler_options, coverage, coverage_options, binner, binner_options, binning_mode, binner_set, target)
         assert len(task) == 1, Exception("Invalid task specification: more than one task matched description.")
         task = task.iloc[0]
 
         if level == 'genome-level':
-            bintbl = construct_binning_table(task)
-            qctbls = construct_quality_control_tables(task)
+            bintbl = ev.construct_binning_table(task)
+            qctbls = ev.construct_quality_control_tables(task)
             read_count = parse_read_counts(self.config.read_counts)
             read_count = read_count.loc[target].item()
             ecodb = pd.read_csv(self.config.ecosystem_db_metadata)
-            #spec = pd.read_csv(join(self.config.simulation_dir, f'{target}_metagenome_spec.csv'))
-            genome_metrics = construct_genome_metrics(bintbl, qctbls, read_count, ecodb, pd.DataFrame())
+            spec = pd.read_csv(join(self.config.simulation_dir, f'{target}_metagenome_spec.csv'))
+            genome_metrics = ev.construct_genome_metrics(bintbl, qctbls, read_count, ecodb, spec)
             asm = self.get_name(task.assembler, task.assembler_summary_name)
             cov = self.get_name(task.coverage, task.coverage_summary_name)
             bin = self.get_name(task.binner, task.binner_summary_name)
             genome_metrics = genome_metrics.assign(
-                assembler=asm, coverage=cov, binner=bin, binning_mode=binning_mode, task_hash=task_hash
+                assembler=asm, coverage=cov, binner=bin, binning_mode=binning_mode, task_hash=task.task_hash, target=target
             )
             genome_metrics.to_parquet(
                 join(task.binner_dir, 'genome_metrics.pqt')
@@ -311,16 +311,22 @@ class Project:
         bs='('+'-'.join(bs)+')' if bs else ''
         return tool if sname == 1 else f'{tool}({sname}){bs}'
 
-    def run_evaluation(self, level):
+    def run_evaluation(self, level, min_rc, min_pr):
         manifest = Manifest(self.config.project_base)
         if level == 'genome-level':
             # Concat all the genome metrics 
-            if exists(join(self.config.evaluation_dir, 'genome_metrics.pqt')):
-                mets = pd.read_parquet(join(self.config.evaluation_dir, 'genome_metrics.pqt'))
-            else:
-                mets = pd.concat(
-                    [pd.read_parquet(join(d, 'genome_metrics.pqt')) for d in manifest.m.binner_dir]
-                )
-                mets.to_parquet(self.config.evaluation_dir, 'genome_metrics.pqt')
+            mets = pd.concat(
+                [pd.read_parquet(join(d, 'genome_metrics.pqt')) for d in manifest.m.binner_dir]
+            )
+            mets.to_parquet(join(self.config.evaluation_dir, 'genome_metrics.pqt'))
 
-            #llmcalls
+            # Each MAG-construction task on the same sample should have exactly the same number 
+            # of genome measurements
+            ngenomes=mets.groupby(['target', 'assembler','coverage','binner','binning_mode']).genome.nunique().reset_index()
+            assert(ngenomes.groupby('target').apply(lambda x: len(set(x.genome)) == 1).all())
+
+            # TODO: HERE we're going to include / exclude particular pipelines, allowing us to 
+            # focus on for example, all binners, all refiners, refiner + the binners it relies on
+
+            # run lmm
+            ev.fit_genome_level_model(mets, min_rc, min_pr, self.config.evaluation_dir)
