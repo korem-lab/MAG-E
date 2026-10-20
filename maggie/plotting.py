@@ -17,6 +17,82 @@ MARKER=['o', 'X', 'v', 's', '^']
 MARKER_KEY=['multi-sample-all', 'multi-sample-mash', 'single-sample', 'megahit', 'metaspades']
 MARKER_DICT=dict(zip(MARKER_KEY, MARKER))
 
+KENT_MARKER=['o', 'X', 's', '^']
+KENT_MARKER_KEY=['single', 'all', 'MEGAHIT', 'metaSPAdes']
+KENT_MARKER_DICT=dict(zip(KENT_MARKER_KEY, KENT_MARKER))
+KENT_PALETTE_KEY = [
+    'MaxBin2', 'VAMB', 'CONCOCT', 'METABAT2', 'SemiBin2', 'COMEBin', 'single', 'all' 
+]
+KENT_PALETTE = sns.color_palette('Set3', len(KENT_PALETTE_KEY))
+KENT_PALETTE_DICT = dict(zip(KENT_PALETTE_KEY, KENT_PALETTE))
+KENT_PALETTE_DICT['all'] = sns.color_palette('Set2', 3)[0]
+KENT_PALETTE_DICT['single'] = sns.color_palette('Set2', 3)[1]
+
+def plot_kent_model(emmeans, by, y_name, order, hue_order):
+    
+    # filter emmeans
+    if by=='assembler':
+        strip_hue = 'binner'
+        strip_style = 'binning_mode'
+    elif by=='binner':
+        strip_hue = 'binning_mode'
+        strip_style = 'assembler'
+    elif by=='binning_mode':
+        strip_hue = 'binner'
+        strip_style = 'assembler'
+    else:
+        Exception('not valid by')
+    ax = None
+    for i, cat in enumerate(sorted(emmeans[strip_style].unique())):
+        print('marker',cat, KENT_MARKER_DICT[cat])
+        ax=sns.swarmplot(
+            x=emmeans[emmeans[strip_style]==cat][by], 
+            y=emmeans[emmeans[strip_style]==cat].emmean, 
+            hue=emmeans[emmeans[strip_style]==cat][strip_hue], 
+            order=order,
+            hue_order=hue_order,
+            palette=KENT_PALETTE_DICT,
+            ax=ax,
+            marker=KENT_MARKER_DICT[cat],dodge=True,
+            s=4.5, linewidth=0.5, edgecolor='black',
+            legend=True if i == 0 else False
+        )
+    ax.set_xlabel('Binners' if by =='binner' else 'Binning Mode' if by =='binning_mode' else 'Assembler')
+    ax.set_ylabel(y_name)
+    return ax
+
+def plot_kent_checkM2(checkm, by, yval, y_lab, order, hue_order):
+    
+    if by=='assembler':
+        strip_hue = 'binner'
+        strip_style = 'binning_mode'
+    elif by=='binner':
+        strip_hue = 'binning_mode'
+        strip_style = 'assembler'
+    elif by=='binning_mode':
+        strip_hue = 'binner'
+        strip_style = 'assembler'
+    else:
+        Exception('not valid by')
+    ax = None
+    for i, cat in enumerate(sorted(checkm[strip_style].unique())):
+        print('marker',cat, KENT_MARKER_DICT[cat])
+        ax=sns.swarmplot(
+            x=checkm[checkm[strip_style]==cat][by], 
+            y=checkm[checkm[strip_style]==cat][yval], 
+            hue=checkm[checkm[strip_style]==cat][strip_hue], 
+            order=order,
+            hue_order=hue_order,
+            palette=KENT_PALETTE_DICT,
+            ax=ax,
+            marker=KENT_MARKER_DICT[cat],dodge=True,
+            s=4.5, linewidth=0.5, edgecolor='black',
+            legend=True if i == 0 else False
+        )
+    ax.set_xlabel('Binners' if by =='binner' else 'Binning Mode' if by =='binning_mode' else 'Assembler')
+    ax.set_ylabel(y_lab)
+    return ax
+
 def plot_pipeline_performance_model(emmeans, by, y_name, order):
     
     # filter emmeans
