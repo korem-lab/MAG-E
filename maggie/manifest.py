@@ -142,8 +142,13 @@ class Manifest():
 
     def get_tasks(self, 
             assembler=None, aopt=None, coverage=None, copt=None, binner=None, 
-            bopt=None, binning_mode=None, binner_set=None, target=None, cov_sample=None
+            bopt=None, binning_mode=None, binner_set=None, target=None, cov_sample=None, task_hash=None
         ):
+
+        if task_hash:
+            assert task_hash in set(self.m.task_hash)
+            return self.m[self.m.task_hash == task_hash]
+
         flt = lambda x,y: self.m[x] == y if y is not None else pd.Series(True, index=self.m.index)
         ms_flt = lambda cs: self.m.samples.apply(lambda x: cs in x) if cs is not None else pd.Series(True, index=self.m.index)
         if binner_set:
