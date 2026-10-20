@@ -1,10 +1,54 @@
 import pandas as pd
 import numpy as np
 import glob
+from pathlib import Path
 from .tasks import quality_control as qc
 from os.path import join, exists, basename
-from .utils import parse_read_counts, parse_quality_control_table, get_contig_name, remove_fasta_ext
 
+from .utils import parse_read_counts, parse_quality_control_table, get_contig_name, remove_fasta_ext, run
+
+
+def genome2bin_map(bt, use_genome_coverage=True):
+    # for each contig in the bin, get the set of genomes it maps to
+    if use_genome_coverage:
+        # calculate the genome coverage along each chunk of the reference genome
+        # that is found in the bin
+        bin_sum = bt.groupby(['bin', 'ref'], dropna=False).apply(calculate_coverage).reset_index()
+        # sum up over the bins
+        bin_sum = bin_sum.groupby('bin', dropna=False)[0].sum()
+    else:
+        bin_sum = bt.groupby('bin',dropna=False).contig_length.sum()
+    if bin_sum.index.notna().any():
+        return bin_sum[bin_sum.index.notna()].idxmax()
+    else:
+        return pd.NA
+
+def calculate_coverage(intervals):
+    s = intervals.sort_values("ref_start")[["ref_start", "ref_end"]].to_numpy()
+    total = 0
+    cur_s, cur_e = s[0]
+    cur_s, cur_e = (cur_s, cur_e) if cur_s < cur_e else (cur_e, cur_s)
+    for start, end in s[1:]:
+        start, end = (start, end) if start < end else (end, start)
+        if start > cur_e:
+            total += cur_e - cur_s
+            cur_s, cur_e = start, end
+        else:
+            cur_e = max(cur_e, end)
+    return total + (cur_e - cur_s)
+
+def compute_contig_fp(df):
+    # select for contigs from genomes that are represented by the bin.
+    # A contig could be in a bin where the contig comes from a genome that the bin does not represent
+    # and it should be counted as a false positive for the genome the bin does represent.
+    filt=df.groupby('genome').filter(lambda x: all(x['bin'] == x['representative_bin']))
+    if filt.empty:
+        return pd.DataFrame(columns=['genome','contig','contig_length','target','key'])
+    fps=filt.groupby('genome').apply(lambda x: df[~df.key.isin(x.key)])
+    fps.drop('genome',axis=1,inplace=True)
+    fps=fps.reset_index()
+    fps.drop('level_1',axis=1,inplace=True)
+    return fps 
 
 def construct_binning_table(t):
     btfl = f'{t.binner_dir}/output/binning_table.pqt'
@@ -72,47 +116,79 @@ def construct_quality_control_tables(t):
         tables.append(tool.to_table(t.binner_dir))
     return tables
 
-def genome2bin_map(bt, use_genome_coverage=True):
-    # for each contig in the bin, get the set of genomes it maps to
-    if use_genome_coverage:
-        # calculate the genome coverage along each chunk of the reference genome
-        # that is found in the bin
-        bin_sum = bt.groupby(['bin', 'ref'], dropna=False).apply(calculate_coverage).reset_index()
-        # sum up over the bins
-        bin_sum = bin_sum.groupby('bin', dropna=False)[0].sum()
-    else:
-        bin_sum = bt.groupby('bin',dropna=False).contig_length.sum()
-    if bin_sum.index.notna().any():
-        return bin_sum[bin_sum.index.notna()].idxmax()
-    else:
-        return pd.NA
+def compute_Fscore_genome_metrics(bt, groupby, spec, coverage_based=True, selected_metric=None):
+    metrics = [
+        bt.groupby(groupby).apply(lambda x: f(x,w)).reset_index().rename({0:'value'},axis=1).assign(metric='cov_' + n if coverage_based else n)
+        for f, w, n in (
+            [
+                e for e in [(precision, coverage_based, 'pr'), (recall, coverage_based, 'rc'), (fscore, coverage_based, 'fs')] 
+                if (selected_metric is None or e[-1] == selected_metric)
+            ]
+        )
+    ]
+    metrics = pd.concat(metrics)
 
-def calculate_coverage(intervals):
-    s = intervals.sort_values("ref_start")[["ref_start", "ref_end"]].to_numpy()
-    total = 0
-    cur_s, cur_e = s[0]
-    cur_s, cur_e = (cur_s, cur_e) if cur_s < cur_e else (cur_e, cur_s)
-    for start, end in s[1:]:
-        start, end = (start, end) if start < end else (end, start)
-        if start > cur_e:
-            total += cur_e - cur_s
-            cur_s, cur_e = start, end
-        else:
-            cur_e = max(cur_e, end)
-    return total + (cur_e - cur_s)
+    # Some genomes in the metagenomic spec may absent from the metrics. 
+    # This can happen if the genome is not assembled at all, or if parts of the genome
+    # were assembled, but no part could be confidently mapped back to the genome, resulting
+    # in an absence of that genome in the ground_truth_table. This propagates up to an absence
+    # in its measurement in the metrics table. We makes sure all genomes in the spec are present in metrics.
+    # Any missing genomes are given a recall of 0, F-score 0, precision of 1. 
+    absent_gnms = set(spec.genome) - set(metrics.genome)
+    absent = list()
+    for g in absent_gnms:
+        absent.extend([(g, 'cov_rc', 0), (g, 'cov_pr', 1), (g, 'cov_fs', 0)])
+    absent = pd.DataFrame(absent, columns=['genome', 'metric', 'value'])
+    metrics = pd.concat([metrics, absent])
+    metrics.reset_index(drop=True,inplace=True)
+    return metrics
 
-def compute_contig_fp(df):
-    # select for contigs from genomes that are represented by the bin.
-    # A contig could be in a bin where the contig comes from a genome that the bin does not represent
-    # and it should be counted as a false positive for the genome the bin does represent.
-    filt=df.groupby('genome').filter(lambda x: all(x['bin'] == x['representative_bin']))
-    if filt.empty:
-        return pd.DataFrame(columns=['genome','contig','contig_length','target','key'])
-    fps=filt.groupby('genome').apply(lambda x: df[~df.key.isin(x.key)])
-    fps.drop('genome',axis=1,inplace=True)
-    fps=fps.reset_index()
-    fps.drop('level_1',axis=1,inplace=True)
-    return fps 
+def recall(x, cov_based):
+    if cov_based:
+        # x.TP == True if the contig is in the bin representing the genome.
+        # i.e, the entire contig is a TP. But, we need to go through all the 
+        # TP-contigs, can calculate the non-overlapping basepairs. This is the bp-tp.
+        tp_contigs = x[x.ctgTP]
+        if tp_contigs.empty:
+            return 0
+        tp = x[x.ctgTP].groupby('ref').apply(calculate_coverage).sum()
+
+        # the false negative bp's are every part of the genome that's not covered
+        # i.e fn genome len - tp. Since recall is tp/(tp+fn), we return tp/genome len
+        return tp / x.iloc[0]['genome_length']
+    else:
+        # If its not coverage based, we're going to scores relative to the 
+        # assembl-able, mappable portion of the metagenome. We call a FNs bp from 
+        # contigs that are not assigned to the representative bin, rather than
+        # the part of the genome not covered. We also don't do TP as coverage based.  
+        denom = (x.ctgTP * x.contig_length).sum() + (x.ctgFN * x.contig_length).sum()
+        if denom == 0:
+            return 0
+        return (x.ctgTP * x.contig_length).sum() / denom
+
+def precision(x, cov_based):
+    if cov_based:
+        tp_contigs = x[x.ctgTP]
+        if tp_contigs.empty:
+            return 0
+        tp = x[x.ctgTP].groupby('ref').apply(calculate_coverage).sum()
+        denom = tp + (x.ctgFP * x.contig_length).sum()
+        if denom == 0:
+            return 1
+        return tp / denom
+    else:
+        denom = (x.ctgTP * x.contig_length).sum() + (x.ctgFP * x.contig_length).sum()
+        if denom == 0:
+            return 1
+        return (x.ctgTP * x.contig_length).sum() / denom
+
+def fscore(x, cov_based):
+    p = precision(x, cov_based)
+    r = recall(x, cov_based)
+    denom = p+r
+    if denom == 0:
+        return 0
+    return 2*p*r/(p+r)
 
 def construct_genome_metrics(binning_table, qctbls, read_count, ecodb, spec):
 
@@ -120,7 +196,7 @@ def construct_genome_metrics(binning_table, qctbls, read_count, ecodb, spec):
     binning_table['genome_length'] = binning_table.genome.map(
         ecodb[['genome','Length']].set_index('genome').Length
     )
-    metrics = compute_Fscore_metrics(binning_table, groupby=['genome'])
+    metrics = compute_Fscore_genome_metrics(binning_table, ['genome'], spec)
 
     # add quality control values for each bin
     for tbl in qctbls:
@@ -129,18 +205,77 @@ def construct_genome_metrics(binning_table, qctbls, read_count, ecodb, spec):
         metrics = pd.merge(metrics, tbl, left_on='representative_bin',right_on='bin', how='left')
 
     # add other genome properties
+    metrics = add_genome_properties(metrics, read_count, ecodb, spec)
+    return metrics
+
+def recoverable_set(metrics, min_rc, min_pr):
+    # Determine which genomes are in the recoverable set. Any genome in any target that is
+    # above min_rc and min_pr is considered recovered. Once we've found each such genome, 
+    # we than make the (target, genome) set non-redundant. We now have a list of (target, genome)
+    # pairs where we know that this pair was recoverable in at least one pipeline.
+    recovered_genomes = metrics.groupby(['binning_mode', 'binner', 'assembler', 'target', 'genome']).filter(
+        lambda x: (x[x.metric == 'cov_rc'].value.item() >= min_rc) and (x[x.metric == 'cov_pr'].value.item() >= min_pr)
+    )[['target', 'genome']].drop_duplicates()
+
+    # Get the metrics for each (target, genome) in the recoverable set in each pipeline
+    metrics = metrics.groupby(['binning_mode', 'binner', 'assembler'],group_keys=False).apply(
+        lambda x: pd.merge(recovered_genomes, x, how='left', on=['target', 'genome'])
+    ).reset_index(drop=True)
+
+    # Na could only happen if x has (s,g) pairs not in the recoverable set, but there's no way
+    # that should happen so long as the inital metrics have no na.
+    assert (metrics.notna().all().all()) 
+    return metrics, recovered_genomes
+
+def run_R_script(script, *args):
+    dir = Path(__file__).parent
+    cmd = f'Rscript {dir}/R/{script}.R {" ".join(args)}'
+    run(cmd)
+
+def add_genome_properties(metrics, read_count, ecodb, spec):
     isolates = set(ecodb.genome[ecodb.GenomeType == 'Isolate'])
     metrics['is_isolate'] = metrics.genome.isin(isolates)
     metrics['genome_length'] = metrics.genome.map(
         ecodb[['genome','Length']].set_index('genome').Length
     )
-    #metrics['genome_abundance'] = metrics.genome.map(
-    #    spec[['genome', 'StrainAbund']].set_index('genome').StrainAbund
-    #)
-    #metrics['genome_n_reads'] = metrics.genome_abundance * read_count
-    #metrics['genome_coverage'] = (metrics.genome_n_reads * 250) / metrics.genome_length
-    # E.G multi-strain, GC, TRNA etc etc
+    metrics['genome_abundance'] = metrics.genome.map(
+        spec[['genome', 'StrainAbund']].set_index('genome').StrainAbund
+    )
+    metrics['genome_n_reads'] = metrics.genome_abundance * read_count
+    metrics['genome_coverage'] = (metrics.genome_n_reads * 250) / metrics.genome_length
+    n_strains = spec.SpeciesCID.map(spec.SpeciesCID.value_counts())
+    n_strains.index = spec.genome
+    metrics['n_strains'] = n_strains[metrics.genome.values].reset_index(drop=True)
     return metrics
+
+def fit_genome_level_model(metrics, min_rc, min_pr, eval_dir):
+    metrics, rcvst = recoverable_set(metrics, min_rc, min_pr)
+    metrics.to_parquet(join(eval_dir, 'rcvst_genome_metrics.pqt'))
+    rcvst.to_parquet(join(eval_dir, 'rcvst.pqt'))
+    run_R_script('model_pipelines', join(eval_dir, 'rcvst_genome_metrics.pqt'), eval_dir)
+
+
+def evaluate_pipelines(self, precision, recall, plots=False):
+    # Write the set of recoverable genome scores to a csv for analysis in R
+    os.makedirs(join(self.config.evaluation_dir, 'LMM'), exist_ok=True)
+    gnm_metrics = ev.parse_genome_measurement_files(
+        glob.glob(join(self.config.evaluation_dir, '*.genome_metrics.parquet')), min_cov=0
+    )
+    scores, _ = ev.recoverable_genome_set(gnm_metrics, 0.2, 0.2)
+    scores = scores[['binning_mode', 'binner', 'assembler', 'genome', 'is_refiner', 'sample', 'metric', 'value']]
+    scores.to_csv(join(self.config.evaluation_dir, 'LMM/per_genome_metrics.csv'), index=None)
+
+    # Run the LMM and write output to disk
+    run_R_script('LMM_optimal_mag_pipeline', join(self.config.evaluation_dir, 'LMM'), 'true')
+    ## plot data if needed
+    #if plots:
+    #    for by in ['binner', 'binning-mode', 'assembler']:
+    #        for metric in ['fscore', 'precision', 'recall']:
+    #            order = ['MaxBin2', 'VAMB', 'CONCOCT', 'METABAT2', 'SemiBin2', 'COMEBin']
+    #            ax = plot_pipeline_performance_model(
+    #                pd.read_csv(join(self.config.evaluation_dir, 'LMM', f'all_pipelines_{metric}.csv')), by=by, y_name=metric, order=order
+    #            )
+    #            plot_unlabelled_version(ax, join(utls.MANU_FIGS, 'Fig2', 'MAG_pipeline_LMM_fscore_binner'),ylower=-0.05, yupper=1.3,show=False)
 
 
 def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, read_counts=None, contig_props=None):
@@ -235,96 +370,7 @@ def add_report_data(rprt, gm, manifest):
     gm['binner_options'] =  gm.task_hash.map(manifest.apply(lambda x: x.binner_options if not x.is_refiner else x.refiner_options, axis=1))
     return gm
     
-def compute_Fscore_metrics(bt, groupby, property=None, coverage_based=True, selected_metric=None):
-    metrics = [
-        bt.groupby(groupby).apply(lambda x: f(x,w)).reset_index().rename({0:'value'},axis=1).assign(metric='cov_' + n if coverage_based else n)
-        for f, w, n in (
-            [
-                e for e in [(precision, coverage_based, 'pr'), (recall, coverage_based, 'rc'), (fscore, coverage_based, 'fs')] 
-                if (selected_metric is None or e[-1] == selected_metric)
-            ]
-        )
-    ]
-    metrics = pd.concat(metrics)
-    if property:
-        metrics['property'] = property
-        metrics['n_bases'] = bt.groupby(groupby).apply(lambda x: x.contig_length.sum()).reset_index()[0]
-        metrics['invpctl'] = metrics[property]
-        metrics['pctl'] = metrics[property.replace('invpctl', 'pctl')]
-        metrics.drop(property,axis=1,inplace=True)
-    return metrics
 
-def recall(x, cov_based):
-    if cov_based:
-        # x.TP == True if the contig is in the bin representing the genome.
-        # i.e, the entire contig is a TP. But, we need to go through all the 
-        # TP-contigs, can calculate the non-overlapping basepairs. This is the bp-tp.
-        tp_contigs = x[x.ctgTP]
-        if tp_contigs.empty:
-            return 0
-        tp = x[x.ctgTP].groupby('ref').apply(calculate_coverage).sum()
-
-        # the false negative bp's are every part of the genome that's not covered
-        # i.e fn genome len - tp. Since recall is tp/(tp+fn), we return tp/genome len
-        return tp / x.iloc[0]['genome_length']
-    else:
-        # If its not coverage based, we're going to scores relative to the 
-        # assembl-able, mappable portion of the metagenome. We call a FNs bp from 
-        # contigs that are not assigned to the representative bin, rather than
-        # the part of the genome not covered. We also don't do TP as coverage based.  
-        denom = (x.ctgTP * x.contig_length).sum() + (x.ctgFN * x.contig_length).sum()
-        if denom == 0:
-            return 0
-        return (x.ctgTP * x.contig_length).sum() / denom
-
-def precision(x, cov_based):
-    if cov_based:
-        tp_contigs = x[x.ctgTP]
-        if tp_contigs.empty:
-            return 0
-        tp = x[x.ctgTP].groupby('ref').apply(calculate_coverage).sum()
-        denom = tp + (x.ctgFP * x.contig_length).sum()
-        if denom == 0:
-            return 1
-        return tp / denom
-    else:
-        denom = (x.ctgTP * x.contig_length).sum() + (x.ctgFP * x.contig_length).sum()
-        if denom == 0:
-            return 1
-        return (x.ctgTP * x.contig_length).sum() / denom
-
-def fscore(x, cov_based):
-    p = precision(x, cov_based)
-    r = recall(x, cov_based)
-    denom = p+r
-    if denom == 0:
-        return 0
-    return 2*p*r/(p+r)
-
-def calculate_coverage(intervals):
-    s = intervals.sort_values("ref_start")[["ref_start", "ref_end"]].to_numpy()
-    total = 0
-    cur_s, cur_e = s[0]
-    cur_s, cur_e = (cur_s, cur_e) if cur_s < cur_e else (cur_e, cur_s)
-    for start, end in s[1:]:
-        start, end = (start, end) if start < end else (end, start)
-        if start > cur_e:
-            total += cur_e - cur_s
-            cur_s, cur_e = start, end
-        else:
-            cur_e = max(cur_e, end)
-    return total + (cur_e - cur_s)
-
-def recoverable_genome_set(scores, min_rc, min_pr):
-    scores_rec = scores.groupby(['binning_mode', 'binner', 'assembler', 'sample', 'genome']).filter(
-        lambda x: (x[x.metric == 'cov_rc'].value.iloc[0] >= min_rc) and (x[x.metric == 'cov_pr'].value.iloc[0] >= min_pr)
-    )
-    recovered_genomes = scores_rec[['sample', 'genome']].drop_duplicates()
-    scores = scores.groupby(['binning_mode', 'binner', 'assembler'],group_keys=False).apply(
-        lambda x: pd.merge(recovered_genomes, x, how='left', on=['sample', 'genome'])
-    ).reset_index(drop=True)
-    scores = scores[scores.metric.notna()]
-    return scores, recovered_genomes
 
 
 def parse_genome_measurement_files(score_files, min_cov, metric=None, isolate_only=True):
@@ -495,25 +541,3 @@ def calc_contig_level_metrics(self, precision, recall, drop_raw_property=True):
         ev.construct_contig_property_metrics(
             join(self.config.evaluation_dir, f'{ab}_{bn}_CPREPORT.parquet'), rcvgnms, manifest
         )
-
-def evaluate_pipelines(self, precision, recall, plots=False):
-    # Write the set of recoverable genome scores to a csv for analysis in R
-    os.makedirs(join(self.config.evaluation_dir, 'LMM'), exist_ok=True)
-    gnm_metrics = ev.parse_genome_measurement_files(
-        glob.glob(join(self.config.evaluation_dir, '*.genome_metrics.parquet')), min_cov=0
-    )
-    scores, _ = ev.recoverable_genome_set(gnm_metrics, 0.2, 0.2)
-    scores = scores[['binning_mode', 'binner', 'assembler', 'genome', 'is_refiner', 'sample', 'metric', 'value']]
-    scores.to_csv(join(self.config.evaluation_dir, 'LMM/per_genome_metrics.csv'), index=None)
-
-    # Run the LMM and write output to disk
-    run_R_script('LMM_optimal_mag_pipeline', join(self.config.evaluation_dir, 'LMM'), 'true')
-    ## plot data if needed
-    #if plots:
-    #    for by in ['binner', 'binning-mode', 'assembler']:
-    #        for metric in ['fscore', 'precision', 'recall']:
-    #            order = ['MaxBin2', 'VAMB', 'CONCOCT', 'METABAT2', 'SemiBin2', 'COMEBin']
-    #            ax = plot_pipeline_performance_model(
-    #                pd.read_csv(join(self.config.evaluation_dir, 'LMM', f'all_pipelines_{metric}.csv')), by=by, y_name=metric, order=order
-    #            )
-    #            plot_unlabelled_version(ax, join(utls.MANU_FIGS, 'Fig2', 'MAG_pipeline_LMM_fscore_binner'),ylower=-0.05, yupper=1.3,show=False)

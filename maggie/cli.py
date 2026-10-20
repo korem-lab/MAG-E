@@ -212,7 +212,7 @@ def run(
     refiner_options: str = typer.Option('default', help='CLI option string'),
     binner_set: str = typer.Option(None, help='String specifying the binner set for refiners.'),
     qctool: str = typer.Option(None, help='A quality control tool in the config'),
-    stage: str = typer.Option(None, help='Either prep, main, or all.'),
+    stage: str = typer.Option('all', help='Either prep, main, or all.'),
     force: bool = typer.Option(False, help='Force run the stage.'),
     threads: int  = typer.Option(8, help='Number of threads to launch tasks with'),
     check_done: bool = typer.Option(False, help='Check whether task done.'),
@@ -226,8 +226,6 @@ def run(
         binner = refiner
         binner_options = refiner_options
         assert (binner_set)
-    if stage is None:
-        stage = 'all'
     assert stage in ['all', 'main', 'prep']
     ret_code = project.run_task(
         target, assembler, assembler_options, coverage, coverage_options, cov_sample, binner, binner_options, binning_mode, binner_set, qctool, stage, force, threads, check_done
@@ -297,23 +295,14 @@ def calculate_metrics(
 @app.command()
 def evaluate(
     level: str = typer.Argument(...,help='Either genome-level or contig-level.'),
+    precision: float = typer.Option(0.9, help='Minimum MAG-E precision for the recoverable set.'),
+    recall: float = typer.Option(0.7, help='Minimum MAG-E recall for the recoverable set.'),
     project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     _, directory = _get_project(project_name)
     project = Project.load(directory)
-    project.run_evaluation(level)
+    project.run_evaluation(level, precision, recall)
 
-
-@app.command()
-def calc_per_genome_metrics(
-    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
-):
-    """
-    Calculate MAG-E recall, precision, F-score per genome. 
-    """
-    _, directory = _get_project(project_name)
-    project = Project.load(directory)
-    project.calc_per_genome_metrics()
 
 @app.command()
 def calc_contig_level_metrics(
@@ -327,22 +316,6 @@ def calc_contig_level_metrics(
     _, directory = _get_project(project_name)
     project = Project.load(directory)
     project.calc_contig_level_metrics(precision, recall)
-
-
-@app.command()
-def evaluate_pipelines(
-    no_plots: bool = typer.Option(True, help='No plots will be produced.'),
-    precision: float = typer.Option(0.9, help='Minimum MAG-E precision for the recoverable set.'),
-    recall: float = typer.Option(0.7, help='Minimum MAG-E recall for the recoverable set.'),
-    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
-):
-    """
-    Builds a linear mixed model of the per-genome metrics over all MAG-pipelines.
-    Estimated marginal means (and other values) from model are reported and plotted.
-    """
-    _, directory = _get_project(project_name)
-    project = Project.load(directory)
-    project.evaluate_pipelines(precision, recall, no_plots)
 
 
 @app.command()
