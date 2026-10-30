@@ -216,6 +216,7 @@ def run(
     force: bool = typer.Option(False, help='Force run the stage.'),
     threads: int  = typer.Option(8, help='Number of threads to launch tasks with'),
     check_done: bool = typer.Option(False, help='Check whether task done.'),
+    real_reads: bool = typer.Option(False, help='Map real reads when constructing coverage.'),
     project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     _, directory = _get_project(project_name)
@@ -228,7 +229,7 @@ def run(
         assert (binner_set)
     assert stage in ['all', 'main', 'prep']
     ret_code = project.run_task(
-        target, assembler, assembler_options, coverage, coverage_options, cov_sample, binner, binner_options, binning_mode, binner_set, qctool, stage, force, threads, check_done
+        target, assembler, assembler_options, coverage, coverage_options, cov_sample, binner, binner_options, binning_mode, binner_set, qctool, project.config, stage, force, threads, check_done, real_reads
     )
     exit(ret_code)
 

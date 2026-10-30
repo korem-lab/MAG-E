@@ -218,7 +218,7 @@ class Project:
             print(records.to_string(), flush=True)
             
     def run_task(
-        self, target, assembler, aopt, coverage, copt, cov_sample, binner, bopt, binning_mode, binner_set, qctool, stage, force, threads, check
+        self, target, assembler, aopt, coverage, copt, cov_sample, binner, bopt, binning_mode, binner_set, qctool, config, stage, force, threads, check, real_reads
     ):
         """
         Generic interface to launch tasks MAG-E tasks from.
@@ -242,7 +242,7 @@ class Project:
             assert(len(tsk[['assembler', 'assembler_options','coverage','coverage_options','target']].drop_duplicates()) == 1)
             if cov_sample:
                 # We're calculating the coverage for a specified sample (cov_sample) against the target
-                return not tu.run_coverage(tsk.iloc[0,:], stage, cov_sample, threads, force, check)
+                return not tu.run_coverage(tsk.iloc[0,:], stage, cov_sample, threads, force, check, real_reads, config)
             else:
                 # We're calculating coverage matrices for the target. Calculate the most expansive coverage matrix:
                 # if "all" mode, use "all" task, else use "single" task.

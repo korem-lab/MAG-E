@@ -55,7 +55,7 @@ class Config:
             data = yaml.safe_load(f)
         keys = {f.name for f in fields(cls)}
         for k in keys:
-            if k not in data:
+            if k not in data and k != 'simulate':
                 data[k] = []
         o = cls(**data)
         o.read_counts = join(o.project_base, o.read_counts)
@@ -104,7 +104,7 @@ class Config:
         ret = ''
         if k == 'targets':
             targets = [os.path.basename(e) for e in glob.glob(f'{self.simulation_dir}/*.fastq.gz')]
-            targets = [e.split(f'_{self.prefix1}')[0] for e in targets if f'_{self.prefix1}' in e]
+            targets = [e.split('_R1')[0] for e in targets if '_R1' in e]
             ret = ' '.join(targets)
         elif k == 'assemblers':
             ret = ' '.join(set(a for a,p in self.assemblers))
