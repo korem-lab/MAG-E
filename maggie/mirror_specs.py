@@ -6,17 +6,16 @@ from os.path import join, basename
 from os import makedirs
 from subprocess import run
 
-def construct_sylphsp(reads_dir, sylphsp_dir, prefix1, c=200, t=8):
+def construct_sylphsp(reads_dir, sylphsp_dir, prefix, c=200, t=8):
     """
     For all paired-end samples within a directory (must be gziped with .fastq.gz prefix)
     construct a Sylph Sample sketch (.paired.sp).
     """
     makedirs(sylphsp_dir, exist_ok=True)
-    prefix2 = prefix1.replace('1', '2')
-    r1_reads = sorted(glob.glob(join(reads_dir, f'*_{prefix1}.fastq.gz')))
-    r2_reads = sorted(glob.glob(join(reads_dir, f'*_{prefix2}.fastq.gz')))
+    r1_reads = sorted(glob.glob(join(reads_dir, f'*_{prefix}1.fastq.gz')))
+    r2_reads = sorted(glob.glob(join(reads_dir, f'*_{prefix}2.fastq.gz')))
     sylph_bases = [
-        join(sylphsp_dir, e.replace(f'_{prefix1}.fastq.gz', '').split('/')[-1]) for e in r1_reads
+        join(sylphsp_dir, e.replace(f'_{prefix}1.fastq.gz', '').split('/')[-1]) for e in r1_reads
     ]
     r1_reads = ' '.join(r1_reads)
     r2_reads = ' '.join(r2_reads)

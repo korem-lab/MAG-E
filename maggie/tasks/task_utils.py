@@ -1,6 +1,7 @@
 from os.path import join, exists, basename
 import pandas as pd
 import hashlib
+import sys
 from functools import reduce
 from itertools import product
 from collections import defaultdict
@@ -59,8 +60,9 @@ def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False, r
     coverage = getattr(cv, f'{task.coverage}Coverage')()
     kwargs = {
         'cov_sample':cov_sample, 'threads':threads, 'options':options, 
-        'real_reads':real_reads, 'prefix1':config.prefix1, 'samples_dir':config.samples_dir
     }
+    kwargs['reads_dir'] = config.simulation_dir if not real_reads else config.read_links
+    kwargs['prefix'] = 'R' if not real_reads else config.real_reads_prefix
     kwargs = task.to_dict() | kwargs
     if check:
         ckp = coverage.prep_done(**kwargs)

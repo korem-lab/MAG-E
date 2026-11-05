@@ -39,7 +39,6 @@ class Config:
     samples_dir: str = null
     read_counts: str = null
     contig_properties: str = null
-    prefix1: str  = null
     ecosystem_db: str = null
     assemblers: list = field(default_factory=lambda: null_asm)
     binners: list = field(default_factory=lambda: null_bin)
@@ -69,6 +68,9 @@ class Config:
         """Check whether the configuration file is valid. """
         assert exists(self.project_base)
         assert exists(self.samples_dir)
+        assert exists(self.read_links)
+        assert exists(self.simulation_dir)
+        assert exists(self.evaluation_dir)
         assert exists(self.read_counts)
         # Either left blank, or set to no or yes
         assert (self.simulate == [] or self.simulate == 'no' or self.simulate == 'yes')
@@ -77,7 +79,6 @@ class Config:
             assert exists(self.ecosystem_db)
             assert exists(self.ecosystem_db_metadata)
             assert exists(self.genomes_dir)
-        assert 'NULL' not in self.prefix1
         assert all(exists(join(self.project_base, f'{mode}_datasets.csv')) for mode in self.binning_modes)
 
         # If the api is being used, then make sure every assembly, bin, and refiner class is implemented
@@ -99,11 +100,16 @@ class Config:
         self.binners = [tupleize(e) for e in self.binners]
         self.refiners = [tupleize(e) for e in self.refiners]
         self.coverage = [tupleize(e) for e in self.coverage]
+        self.real_reads_prefix = self.get_real_read_prefix()
+
+    def get_real_read_prefix(self):
+        file = glob.glob(join(self.read_links, '*.fastq.gz'))[0]
+        return file.replace('.fastq.gz','').split('_')[-1][:-1]
 
     def get_list_of(self, k):
         ret = ''
         if k == 'targets':
-            targets = [os.path.basename(e) for e in glob.glob(f'{self.simulation_dir}/*.fastq.gz')]
+            targets = [os.path.basename(e) for e in glob.glob(f'{self.read_links}/*{self.config.real_read_prefix}1.fastq.gz')]
             targets = [e.split('_R1')[0] for e in targets if '_R1' in e]
             ret = ' '.join(targets)
         elif k == 'assemblers':
@@ -169,6 +175,10 @@ class Config:
             return join(self.project_base, 'simulations')
         else:
             return join(self.project_base, 'read_links')
+
+    @property
+    def read_links(self):
+        return join(self.project_base, 'read_links')
 
     @property
     def sylsp_dir(self):
