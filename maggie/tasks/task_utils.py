@@ -1,6 +1,7 @@
 from os.path import join, exists, basename
 import pandas as pd
 import hashlib
+import sys
 from functools import reduce
 from itertools import product
 from collections import defaultdict
@@ -52,12 +53,16 @@ def run_assembly(task, threads=8, force=False, check=False):
         rm_dir(task.assembler_dir, remake=True)
         assembler.run_main(**kwargs)
 
-def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False):
+def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False, real_reads=False, config=None):
     if cov_sample is not None:
         assert cov_sample in task.samples
     options = '' if task.coverage_options == 'default' else task.coverage_options
     coverage = getattr(cv, f'{task.coverage}Coverage')()
-    kwargs = {'cov_sample':cov_sample, 'threads':threads, 'options':options}
+    kwargs = {
+        'cov_sample':cov_sample, 'threads':threads, 'options':options, 
+    }
+    kwargs['reads_dir'] = config.simulation_dir if not real_reads else config.read_links
+    kwargs['prefix'] = 'R' if not real_reads else config.real_reads_prefix
     kwargs = task.to_dict() | kwargs
     if check:
         ckp = coverage.prep_done(**kwargs)

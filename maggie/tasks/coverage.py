@@ -89,9 +89,9 @@ class bowtie2Coverage(Coverage):
     def abundance_precomputed():
         return False
 
-    def run_main(self, simulation_dir, coverage_dir, cov_sample, threads, options, **kwargs):
-        r1 = join(simulation_dir, f'{cov_sample}_R1.fastq.gz')
-        r2 = join(simulation_dir, f'{cov_sample}_R2.fastq.gz')
+    def run_main(self, reads_dir, coverage_dir, cov_sample, threads, options, prefix, **kwargs):
+        r1 = join(reads_dir, f'{cov_sample}_{prefix}1.fastq.gz')
+        r2 = join(reads_dir, f'{cov_sample}_{prefix}2.fastq.gz')
         bam = join(coverage_dir, f'{cov_sample}.bam')
         cmd = f'bowtie2 --no-unal -p {threads} {options} -x {coverage_dir}/idx -1 {r1} -2 {r2} | samtools view -bS - > {bam}'
         run(cmd)
@@ -145,7 +145,7 @@ class bowtie2JGICoverage(Coverage):
         rm_dir(coverage_dir, remake=True)
 
         # index
-        cmd = f'bowtie2-build --threads {threads} {assembler_dir}/contigs.fasta {coverage_dir}/idx'
+        cmd = f'bowtie2-build --no-unal --threads {threads} {assembler_dir}/contigs.fasta {coverage_dir}/idx'
         run(cmd)
 
         # map

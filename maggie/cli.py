@@ -82,6 +82,15 @@ def reset_cache():
     remove(join(Path(__file__).parent.parent,'.project_cache.tsv'))
 
 @app.command()
+def build_core_directories(
+    project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
+):
+    "Verifies the config, and populates the project with the required directories."
+    _, directory = _get_project(project_name)
+    project = Project.load(directory, verify=False)
+    project.build_core_directories()
+
+@app.command()
 def verify_project(
     project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
@@ -143,7 +152,6 @@ def construct_manifest(
     """
     _, directory = _get_project(project_name)
     project = Project.load(directory)
-    project.build_core_directories()
     project.construct_tasks()
 
 @app.command()
@@ -216,6 +224,7 @@ def run(
     force: bool = typer.Option(False, help='Force run the stage.'),
     threads: int  = typer.Option(8, help='Number of threads to launch tasks with'),
     check_done: bool = typer.Option(False, help='Check whether task done.'),
+    real_reads: bool = typer.Option(False, help='Map real reads when constructing coverage.'),
     project_name: str = typer.Option(None, help='The name of an initialized MAG-E project')
 ):
     _, directory = _get_project(project_name)
@@ -228,7 +237,8 @@ def run(
         assert (binner_set)
     assert stage in ['all', 'main', 'prep']
     ret_code = project.run_task(
-        target, assembler, assembler_options, coverage, coverage_options, cov_sample, binner, binner_options, binning_mode, binner_set, qctool, stage, force, threads, check_done
+        target, assembler, assembler_options, coverage, coverage_options, cov_sample, 
+        binner, binner_options, binning_mode, binner_set, qctool, project.config, stage, force, threads, check_done, real_reads
     )
     exit(ret_code)
 

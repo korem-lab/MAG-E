@@ -39,23 +39,25 @@ class Project:
         return cls(project_path, config) 
 
     @classmethod
-    def load(cls, project_path: Path) -> "Project":
+    def load(cls, project_path: Path, verify=True) -> "Project":
         config = Config.from_yaml(join(project_path, "config.yaml"))
-        config.verify_config()
+        if verify:
+            config.verify_config()
         return cls(project_path, config)
 
+
     def build_core_directories(self):
-        if self.config.simulate == 'yes':
-            os.makedirs(self.config.ecosystem_db, exist_ok=True)
-        else:
-            # Soft link the reads
-            os.makedirs(self.config.simulation_dir, exist_ok=True)
-            fqs = glob.glob(join(self.config.samples_dir, '*.fastq.gz'))
-            for srcfq in fqs:
-                dstfq = join(self.config.simulation_dir, os.path.basename(srcfq))
-                soft_link(srcfq, dstfq)
+        os.makedirs(self.config.ecosystem_db, exist_ok=True)
         os.makedirs(self.config.simulation_dir, exist_ok=True)
         os.makedirs(self.config.evaluation_dir, exist_ok=True)
+        os.makedirs(self.config.read_links, exist_ok=True)
+        # Soft link the real reads
+        fqs = glob.glob(join(self.config.samples_dir, '*.fastq.gz'))
+        print(fqs)
+        for srcfq in fqs:
+            dstfq = join(self.config.read_links, os.path.basename(srcfq))
+            print(srcfq, dstfq)
+            soft_link(srcfq, dstfq)
 
     def make_database(self, threads=8, ani=0.98, c=200, write_to_disk=False):
         """
@@ -95,7 +97,7 @@ class Project:
         """
 
         # Make a Sylph sketch (paired.sylsp) of each sample.
-        ms.construct_sylphsp(self.config.samples_dir, self.config.sylsp_dir, self.config.prefix1, t=threads,c=c)
+        ms.construct_sylphsp(self.config.read_links, self.config.sylsp_dir, self.config.real_read_prefix, t=threads,c=c)
 
         # Sylph query and profile each sample.
         ms.sylph_profile(self.config.sylsp_dir, self.config.ecosystem_db, self.config.simulation_dir, 'repr', t=threads)
@@ -218,7 +220,7 @@ class Project:
             print(records.to_string(), flush=True)
             
     def run_task(
-        self, target, assembler, aopt, coverage, copt, cov_sample, binner, bopt, binning_mode, binner_set, qctool, stage, force, threads, check
+        self, target, assembler, aopt, coverage, copt, cov_sample, binner, bopt, binning_mode, binner_set, qctool, config, stage, force, threads, check, real_reads
     ):
         """
         Generic interface to launch tasks MAG-E tasks from.
@@ -242,7 +244,8 @@ class Project:
             assert(len(tsk[['assembler', 'assembler_options','coverage','coverage_options','target']].drop_duplicates()) == 1)
             if cov_sample:
                 # We're calculating the coverage for a specified sample (cov_sample) against the target
-                return not tu.run_coverage(tsk.iloc[0,:], stage, cov_sample, threads, force, check)
+                print(config.read_links)
+                return not tu.run_coverage(tsk.iloc[0,:], stage, cov_sample, threads, force, check, real_reads, config)
             else:
                 # We're calculating coverage matrices for the target. Calculate the most expansive coverage matrix:
                 # if "all" mode, use "all" task, else use "single" task.
