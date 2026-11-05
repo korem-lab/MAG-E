@@ -93,7 +93,7 @@ class bowtie2Coverage(Coverage):
         r1 = join(simulation_dir, f'{cov_sample}_R1.fastq.gz')
         r2 = join(simulation_dir, f'{cov_sample}_R2.fastq.gz')
         bam = join(coverage_dir, f'{cov_sample}.bam')
-        cmd = f'bowtie2 -p {threads} {options} -x {coverage_dir}/idx -1 {r1} -2 {r2} | samtools view -bS - > {bam}'
+        cmd = f'bowtie2 --no-unal -p {threads} {options} -x {coverage_dir}/idx -1 {r1} -2 {r2} | samtools view -bS - > {bam}'
         run(cmd)
         sort_bam(bam, threads=threads)
         index_bam(bam)
@@ -153,7 +153,7 @@ class bowtie2JGICoverage(Coverage):
             r1 = join(simulation_dir, f'{s}_R1.fastq.gz')
             r2 = join(simulation_dir, f'{s}_R2.fastq.gz')
             bam = join(coverage_dir, f'{s}.bam')
-            cmd = f'bowtie2 -p {threads} -u 100000 {options} -x {coverage_dir}/idx -1 {r1} -2 {r2} | samtools view -bS - > {bam}'
+            cmd = f'bowtie2 --no-unal -p {threads} -u 100000 {options} -x {coverage_dir}/idx -1 {r1} -2 {r2} | samtools view -bS - > {bam}'
             run(cmd)
             sort_bam(bam, threads)
             index_bam(bam)
