@@ -61,8 +61,6 @@ def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False, r
     kwargs = {
         'cov_sample':cov_sample, 'threads':threads, 'options':options, 
     }
-    kwargs['reads_dir'] = config.simulation_dir if not real_reads else config.read_links
-    kwargs['prefix'] = 'R' if not real_reads else config.real_reads_prefix
     kwargs = task.to_dict() | kwargs
     if check:
         ckp = coverage.prep_done(**kwargs)
@@ -74,6 +72,8 @@ def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False, r
             coverage.run_prep(**kwargs)
     if stage == 'main' or stage == 'all':
         if force or not coverage.main_done(**kwargs):
+            kwargs['reads_dir'] = config.simulation_dir if not real_reads else config.read_links
+            kwargs['prefix'] = 'R' if not real_reads else config.real_reads_prefix
             coverage.run_main(**kwargs)
 
 def run_binning(task, stage, threads=8, force=False, check=False):
