@@ -49,7 +49,7 @@ def load_blast_results(file):
     return hits
 
 def construct_ground_truth(
-        tasks, min_contig_len, min_pident, min_prop, max_prop, threads=8
+        tasks, min_contig_len, min_pident, min_prop, max_prop, threads=8, path_to_genomes=None
     ):
 
     # extract assembly tasks
@@ -57,7 +57,10 @@ def construct_ground_truth(
     for i in range(len(asm_tasks)):
         t = asm_tasks.iloc[i,:]
         print(t.target)
-        genomes = glob.glob(join(t.simulation_dir, f'iss_{t.target}_genomes/*.fasta.gz'))
+        if path_to_genomes:
+            genomes = glob.glob(join(path_to_genomes, f'{t.target}/*.fasta.gz'))
+        else:
+            genomes = glob.glob(join(t.simulation_dir, f'iss_{t.target}_genomes/*.fasta.gz'))
         contigs = join(t.assembler_dir, f'contigs.fasta')
         hits = get_blast_file(t.target, contigs, genomes, t.assembler_dir,threads=threads)
         hits = filter_blast_hits(hits, min_contig_len, min_pident, min_prop, max_prop)

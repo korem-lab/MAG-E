@@ -264,7 +264,7 @@ class Project:
 
     def construct_ground_truth(
             self, target, assembler, assembler_options, 
-            min_contig_len=100, min_pident=99, min_prop=99, max_prop=101, threads=8
+            min_contig_len=100, min_pident=99, min_prop=99, max_prop=101, threads=8, path_to_genomes=None
         ):
         """
         Constructs the ground truth for each assembly. 
@@ -276,7 +276,7 @@ class Project:
         else:
             tsks = manifest.m
         gt.construct_ground_truth(
-            tsks, min_contig_len, min_pident, min_prop, max_prop, threads
+            tsks, min_contig_len, min_pident, min_prop, max_prop, threads, path_to_genomes=path_to_genomes
         )
 
     def calculate_metrics(self,

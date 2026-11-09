@@ -265,6 +265,7 @@ def construct_ground_truth(
     min_aln_prop: float = typer.Option(99, help='alignment_length >= contig_length*(min_aln_prop) for a ground truth match'),
     max_aln_prop: float = typer.Option(101, help='alignment_length <= contig_length*(max_aln_prop) for a ground truth match'),
     project_name: str = typer.Option(None, help='The name of an initialized MAG-E project'),
+    path_to_genomes: str = typer.Option(None, help='Path to the directory of genomes used to construct each sample.'),
     threads: int = typer.Option(8, help='threads')
 ):
     """
@@ -272,7 +273,7 @@ def construct_ground_truth(
     """
     _, directory = _get_project(project_name)
     project = Project.load(directory)
-    project.construct_ground_truth(target, assembler, assembler_options, min_contig_len, min_pident, min_aln_prop, max_aln_prop, threads)
+    project.construct_ground_truth(target, assembler, assembler_options, min_contig_len, min_pident, min_aln_prop, max_aln_prop, threads, path_to_genomes)
 
 @app.command()
 def calculate_metrics(
