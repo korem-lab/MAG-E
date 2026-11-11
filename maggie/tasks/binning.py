@@ -357,6 +357,45 @@ class CONCOCTBinner(Binner):
         bin_dir = join(binner_dir, 'output/bins')
         return bin_done(bin_dir)
 
+class MetaCatBinner:
+    name='MetaCat'
+    exec='MetaCat'
+    size=1000
+    def run_main(self, binner_dir, options, threads, **kwargs):
+        output = join(binner_dir, 'output')
+        input = join(binner_dir, 'input')
+        run(f'mamba run -n {self.exec} {self.exec} coverage --bam {input}/*.bam --output {output}/metacat.coverage')
+        run(f'mamba run -n {self.exec} {self.exec} seed --fasta {input}/asm.fasta --output {output}/metacat.seed')
+        run(f'mamba run -n {self.exec} {self.exec} cluster --threads {threads} --fasta {input}/asm.fasta --coverage {output}/metacat.coverage --seed {output}/metacat.seed --output {output}/bins/bin')
+        self.bins_as_fasta(f'{output}/bins')
+
+    def run_prep(self, assembler_dir, coverage_dir, samples, binner_dir, coverage, options, threads, **kwargs):
+        input_dir = join(binner_dir, 'input')
+        output_dir = join(binner_dir, 'output')
+        makedirs(input_dir,exist_ok=True)
+        makedirs(output_dir,exist_ok=True)
+        makedirs(f'{output_dir}/bins', exist_ok=True)
+        target_sample = samples[0]
+        softlink_assembly_to_taskdir(assembler_dir, target_sample, binner_dir)
+        apc = getattr(cv, f'{coverage}Coverage').abundance_precomputed()
+        if apc: # nothing to do
+            return
+        # single and multi-sample prep differ
+        for sample in samples:
+            bam = join(coverage_dir, f'{sample}.bam')
+            bamln = join(binner_dir, 'input', f'{sample}.bam')
+            run(f'ln -s {bam} {bamln}')
+
+    def bins_as_fasta(self, bin_dir):
+        return glob.glob(join(bin_dir, '*.fasta'))
+
+    def prep_done(self, binner_dir, samples, coverage, **kwargs):
+        input_dir = join(binner_dir, 'input')
+        return not_empty(f'{input_dir}/asm.fasta') and all(not_empty(f'{input_dir}/{s}.bam') for s in samples)
+
+    def main_done(self, binner_dir, **kwargs):
+        bin_dir = join(binner_dir, 'output/bins')
+        return bin_done(bin_dir)
 
 class COMEBinBinner:
     name='COMEBin'
