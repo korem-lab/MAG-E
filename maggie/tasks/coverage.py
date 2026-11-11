@@ -8,7 +8,7 @@ from ..utils import rm_dir, rm_file, not_empty, run, get_temp_local, bamok
 
 def sort_bam(bam, coordinate=True, tmp_pref='tmp', threads=8):
     sort_coordinate = '' if coordinate else ' -n '
-    dirname = get_temp_local()
+    dirname = get_temp_local(bam)
     dirname = join(dirname, tmp_pref)
     run(f'samtools sort -@ {threads} -T {dirname} {sort_coordinate} {bam} > {bam}.{tmp_pref}')
     run(f'mv {bam}.{tmp_pref} {bam}')
