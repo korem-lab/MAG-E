@@ -28,8 +28,12 @@ def make_bash_template(name, time, mem, thread):
 #SBATCH --cpus-per-task={thread}
     """
 
-def get_temp_local(subdir='ic2465'):
-    return os.environ['LOCAL_JOB_DIR']
+def get_temp_local(bam, subdir='ic2465'):
+    if 'LOCAL_JOB_DIR' in os.environ:
+        return os.environ['LOCAL_JOB_DIR']
+    else:
+        return os.path.basename(bam)
+
 
 def printit(func):
     def wrapper(*args, **kwargs):
