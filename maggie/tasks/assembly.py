@@ -75,7 +75,7 @@ class metaSPAdesAssembler(Assembler):
 
     def run_main(self, r1, r2, assembler_dir, threads, options, **kwargs):
         rm_dir(assembler_dir, remake=True)
-        cmd = f'{self.exec} -t {threads} {options} -1 {r1} -2 {r2} -o {assembler_dir}/asm'
+        cmd = f'{self.exec} -t {threads} {options}  -1 {r1} -2 {r2} -o {assembler_dir}/asm'
         run(cmd)
         self.clean_up(assembler_dir)
 
