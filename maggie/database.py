@@ -1,5 +1,4 @@
 import os
-import pandas as pd
 from os.path import exists, join
 from subprocess import run
 
@@ -33,6 +32,7 @@ def get_dRep_cluster_info(grep, drep_dir):
     Using Wdb (which specifies cluster representatives), construct
     isStrainRepr (true, if the genome is the strain representative).
     """
+    import pandas as pd
     try:
         cdbfl = join(drep_dir, f'dRep_{grep}/data_tables/Cdb.csv')
         cdb = pd.read_csv(cdbfl)
@@ -48,6 +48,7 @@ def get_dRep_cluster_info(grep, drep_dir):
         return None
 
 def build_database_table(database, genomes_dir, drep_dir, force=False):
+    import pandas as pd
     if ('StrainCID' in database.columns) and ('isStrainRepr' in database.columns) \
         and ('StrainRepr' in database.columns) and not force: 
         return database

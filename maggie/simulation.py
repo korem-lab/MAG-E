@@ -1,12 +1,12 @@
 import os
 import glob
-import pandas as pd
 from os.path import join, exists,basename
 from subprocess import run
-import numpy as np
 from .utils import parse_read_counts, decompress, compress, make_bash_template, add_cmd
 
 def run_InSilicoSeq(spec, simout, read_counts, n_reads='auto', threads=8, seed=37, force=True, print_script=False):
+    import pandas as pd
+    import numpy as np
     np.random.seed(37)
     # Either supply a set number of reads per sample
     # Or supply 'auto' and the number of reads in each simulation will match the number of reads in the real data

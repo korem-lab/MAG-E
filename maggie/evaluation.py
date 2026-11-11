@@ -1,5 +1,3 @@
-import pandas as pd
-import numpy as np
 import glob
 from pathlib import Path
 from .tasks import quality_control as qc
@@ -9,6 +7,7 @@ from .utils import parse_read_counts, parse_quality_control_table, get_contig_na
 
 
 def genome2bin_map(bt, use_genome_coverage=True):
+    import pandas as pd
     # for each contig in the bin, get the set of genomes it maps to
     if use_genome_coverage:
         # calculate the genome coverage along each chunk of the reference genome
@@ -38,6 +37,7 @@ def calculate_coverage(intervals):
     return total + (cur_e - cur_s)
 
 def compute_contig_fp(df):
+    import pandas as pd
     # select for contigs from genomes that are represented by the bin.
     # A contig could be in a bin where the contig comes from a genome that the bin does not represent
     # and it should be counted as a false positive for the genome the bin does represent.
@@ -51,6 +51,7 @@ def compute_contig_fp(df):
     return fps 
 
 def construct_binning_table(t):
+    import pandas as pd
     btfl = f'{t.binner_dir}/output/binning_table.pqt'
     if exists(btfl):
         return pd.read_parquet(btfl)
@@ -117,6 +118,7 @@ def construct_quality_control_tables(t):
     return tables
 
 def compute_Fscore_genome_metrics(bt, groupby, spec, coverage_based=True, selected_metric=None):
+    import pandas as pd
     metrics = [
         bt.groupby(groupby).apply(lambda x: f(x,w)).reset_index().rename({0:'value'},axis=1).assign(metric='cov_' + n if coverage_based else n)
         for f, w, n in (
@@ -191,6 +193,7 @@ def fscore(x, cov_based):
     return 2*p*r/(p+r)
 
 def construct_genome_metrics(binning_table, qctbls, read_count, ecodb, spec):
+    import pandas as pd
 
     # Compute the per-genome precision, recall, fscore metrics
     binning_table['genome_length'] = binning_table.genome.map(
@@ -209,6 +212,7 @@ def construct_genome_metrics(binning_table, qctbls, read_count, ecodb, spec):
     return metrics
 
 def recoverable_set(metrics, min_rc, min_pr):
+    import pandas as pd
     # Determine which genomes are in the recoverable set. Any genome in any target that is
     # above min_rc and min_pr is considered recovered. Once we've found each such genome, 
     # we than make the (target, genome) set non-redundant. We now have a list of (target, genome)
@@ -279,6 +283,8 @@ def evaluate_pipelines(self, precision, recall, plots=False):
 
 
 def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, read_counts=None, contig_props=None):
+    import numpy as np
+    import pandas as pd
     rprt = list()
     for e in manifest.binner_dir:
         if exists(join(e, 'output/binning_table.csv')):
@@ -331,6 +337,7 @@ def construct_report(manifest, add_qc=True, add_cp=True, add_abundance=True, rea
 
 
 def add_report_data(rprt, gm, manifest):
+    import pandas as pd
 
     # there are per-genome measurements or variables that are important for downstream evaluations
     all_qc_measures = list()
@@ -374,6 +381,8 @@ def add_report_data(rprt, gm, manifest):
 
 
 def parse_genome_measurement_files(score_files, min_cov, metric=None, isolate_only=True):
+    import numpy as np
+    import pandas as pd
     score  = list()
     for sf in score_files:
         scr = pd.read_parquet(sf)
@@ -390,6 +399,7 @@ def parse_genome_measurement_files(score_files, min_cov, metric=None, isolate_on
     return score
 
 def to_percentiles(data):
+    import numpy as np
     data = data.dropna()
     name = data.columns[0] # prop name
     data.sort_values(by=name, inplace=True)
@@ -417,6 +427,8 @@ def to_percentiles(data):
 
 
 def construct_contig_property_metrics(prq_file, rcvgnms, manifest):
+    import numpy as np
+    import pandas as pd
     # read report 
     rprt = pd.read_parquet(prq_file)
 
@@ -459,6 +471,8 @@ def construct_contig_property_metrics(prq_file, rcvgnms, manifest):
     all_metrics.to_parquet(prq_file.replace('_CPREPORT.parquet', f'.cp_metrics.parquet'))
 
 def calc_per_genome_metrics(self):
+    import numpy as np
+    import pandas as pd
     # Construct the binning table for each binning tasks
     manifest = Manifest(self.config.project_base)
     tu.construct_binning_tables(manifest)
@@ -489,6 +503,8 @@ def calc_per_genome_metrics(self):
         gm.to_parquet(join(self.config.evaluation_dir, f'{ab}_{bn}.genome_metrics.parquet'))
 
 def calc_contig_level_metrics(self, precision, recall, drop_raw_property=True):
+    import numpy as np
+    import pandas as pd
     manifest = Manifest(self.config.project_base)
     # Add ground truth genome origin to the contig properties
     asm_tasks = manifest.loc[['assembler', 'target_sample', 'assembly_options', 'assembler_dir']].drop_duplicates()

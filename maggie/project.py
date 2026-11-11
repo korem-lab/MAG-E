@@ -1,11 +1,8 @@
 import pandas as pd
 import os
-import sys
 from os.path import join, exists
 import glob
-import numpy as np
 from pathlib import Path
-from itertools import product
 
 from .config import Config
 from . import database as db
@@ -15,7 +12,6 @@ from . import evaluation as ev
 from .tasks import assembly as ab, binning as bn, quality_control as qc, coverage as cv, task_utils as tu
 from . import ground_truth as gt 
 from .utils import parse_contig_properties, print_and_return, soft_link, parse_read_counts
-from .plotting import plot_pipeline_performance_model, plot_unlabelled_version
 from .manifest import Manifest
 
 

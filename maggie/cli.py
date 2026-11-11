@@ -2,7 +2,6 @@ import typer
 from os.path import exists, join
 from os import remove
 from sys import exit
-import pandas as pd
 from typer.core import TyperGroup
 from pathlib import Path
 from .project import Project
@@ -14,6 +13,7 @@ class OrderedGroup(TyperGroup):
 app = typer.Typer(help='MAG-E -- Metagenome Assembled Genome Evaluator',cls=OrderedGroup)
 
 def add_new_project_to_cache(name, directory):
+    import pandas as pd
     MAGE_dir = Path(__file__).parent.parent
     cache_name = join(MAGE_dir, '.project_cache.tsv')
     record = {'name':name, 'directory': directory, 'is_current':False}
@@ -28,6 +28,7 @@ def add_new_project_to_cache(name, directory):
     df.to_csv(cache_name, sep='\t', index=None)
 
 def set_project_to_current(name):
+    import pandas as pd
     MAGE_dir = Path(__file__).parent.parent
     cache_name = join(MAGE_dir, '.project_cache.tsv')
     df = pd.read_csv(cache_name, sep='\t')
@@ -41,6 +42,7 @@ def set_project_to_current(name):
     df.to_csv(cache_name, sep='\t', index=None)
 
 def _get_project(name):
+    import pandas as pd
     MAGE_dir = Path(__file__).parent.parent
     cache_name = join(MAGE_dir, '.project_cache.tsv')
     df = pd.read_csv(cache_name, sep='\t')

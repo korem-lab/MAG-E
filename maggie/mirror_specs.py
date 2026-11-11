@@ -1,7 +1,4 @@
 import glob
-import pandas as pd
-import numpy as np
-from pandas.api.types import CategoricalDtype
 from os.path import join, basename
 from os import makedirs
 from subprocess import run
@@ -25,6 +22,7 @@ def construct_sylphsp(reads_dir, sylphsp_dir, prefix, c=200, t=8):
     return [f'{e}.paired.sylsp' for e in sylph_bases]
 
 def sylph_profile(sylsp_dir, maggie_db_dir, sim_dir, db_prefix, t=8):
+    import pandas as pd
     run(f'sylph profile {sylsp_dir}/*.sylsp {maggie_db_dir}/{db_prefix}.syldb -t {t} -o {sim_dir}/sylph_profile.tsv',shell=True)
     # make per-sample files for easier loading
     for sample, df in pd.read_csv(f'{sim_dir}/sylph_profile.tsv', sep='\t').groupby('Sample_file'):
@@ -33,6 +31,7 @@ def sylph_profile(sylsp_dir, maggie_db_dir, sim_dir, db_prefix, t=8):
     return join(sim_dir, 'sylph_profile.tsv')
 
 def sylph_query(sylsp_dir, maggie_db_dir, sim_dir, db_prefix, t=8):
+    import pandas as pd
     run(f'sylph query --minimum-ani 95 {sylsp_dir}/*.sylsp {maggie_db_dir}/{db_prefix}.syldb -t {t} -o {sim_dir}/sylph_query.tsv', shell=True)
     # make per-sample files for easier loading
     for sample, df in pd.read_csv(f'{sim_dir}/sylph_query.tsv', sep='\t').groupby('Sample_file'):
@@ -41,7 +40,8 @@ def sylph_query(sylsp_dir, maggie_db_dir, sim_dir, db_prefix, t=8):
     return join(sim_dir, 'sylph_query.tsv')
 
 def select_genomes(df, ani=99.8, ci_lower=99.5, max_strains=3):
-
+    import pandas as pd
+    import numpy as np
     # Select all genomes that have ANI >= 99.8 with either a high confidence adjusted ANI or naive ANI
     fltr = (df.Adjusted_ANI >= ani) & (df['ANI_5-95_percentile'].apply(lambda x: True if 'NA-NA'== x else float(x.split('-')[0]) >= ci_lower))
     df_filt = df[fltr]
@@ -68,6 +68,9 @@ def select_genomes(df, ani=99.8, ci_lower=99.5, max_strains=3):
         return pd.DataFrame(df).T
 
 def construct_metagenomic_specification(sim_dir, db_table, prof, query, seed):
+    import pandas as pd
+    from pandas.api.types import CategoricalDtype
+    import numpy as np
     np.random.seed(seed)
     # load query and profile
     prof = pd.read_csv(prof, delimiter='\t')

@@ -5,7 +5,6 @@ from dataclasses import dataclass, field, asdict, fields
 from collections import defaultdict
 from pathlib import Path
 import yaml
-import pandas as pd
 from .utils import tupleize
 from .tasks import quality_control, assembly, binning
 
@@ -153,6 +152,7 @@ class Config:
         return '\0'.join(binner_sets)
 
     def get_samples_within_mode(self, mode, target):
+        import pandas as pd
         assert mode in self.binning_modes, Exception("Supplied binning mode is invalid.")
         df = pd.read_csv(os.path.join(self.project_base, f'{mode}_datasets.csv'))
         return ' '.join(df.loc[df.target == target].dataset.values)
