@@ -41,9 +41,9 @@ def make_ids(l):
             ids[k] = {v:1}
     return ids
 
-def run_assembly(task, threads=8, force=False, check=False):
-    r1 = join(task.simulation_dir, f'{task.target}_R1.fastq.gz')
-    r2 = join(task.simulation_dir, f'{task.target}_R2.fastq.gz')
+def run_assembly(task, threads=8, prefix=None, force=False, check=False):
+    r1 = join(task.simulation_dir, f'{task.target}_{prefix}1.fastq.gz')
+    r2 = join(task.simulation_dir, f'{task.target}_{prefix}2.fastq.gz')
     options = '' if task.assembler_options == 'default' else task.assembler_options
     assembler = getattr(ab, f'{task.assembler}Assembler')()
     kwargs = task.to_dict() | {'threads':threads, 'r1':r1, 'r2':r2,'options':options}
@@ -72,8 +72,9 @@ def run_coverage(task, stage, cov_sample, threads=8, force=False, check=False, r
             coverage.run_prep(**kwargs)
     if stage == 'main' or stage == 'all':
         if force or not coverage.main_done(**kwargs):
+            simulated = config.simulate == 'yes'
             kwargs['reads_dir'] = config.simulation_dir if not real_reads else config.read_links
-            kwargs['prefix'] = 'R' if not real_reads else config.real_reads_prefix
+            kwargs['prefix'] = 'R' if (simulated and not real_reads) else config.real_reads_prefix
             coverage.run_main(**kwargs)
 
 def run_binning(task, stage, threads=8, force=False, check=False):
