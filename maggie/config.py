@@ -110,7 +110,7 @@ class Config:
         ret = ''
         if k == 'targets':
             targets = [os.path.basename(e) for e in glob.glob(f'{self.read_links}/*_{self.real_reads_prefix}1.fastq.gz')]
-            targets = [e.split(f'_{self.real_reads_prefix}1')[0] for e in targets]
+            targets = [e.replace(f'_{self.real_reads_prefix}1.fastq.gz','') for e in targets]
             ret = ' '.join(targets)
         elif k == 'assemblers':
             ret = ' '.join(set(a for a,p in self.assemblers))

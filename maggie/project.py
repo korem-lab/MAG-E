@@ -47,16 +47,15 @@ class Project:
 
 
     def build_core_directories(self):
-        os.makedirs(self.config.ecosystem_db, exist_ok=True)
+        if self.config.ecosystem_db != []:
+            os.makedirs(self.config.ecosystem_db, exist_ok=True)
         os.makedirs(self.config.simulation_dir, exist_ok=True)
         os.makedirs(self.config.evaluation_dir, exist_ok=True)
         os.makedirs(self.config.read_links, exist_ok=True)
         # Soft link the real reads
         fqs = glob.glob(join(self.config.samples_dir, '*.fastq.gz'))
-        print(fqs)
         for srcfq in fqs:
             dstfq = join(self.config.read_links, os.path.basename(srcfq))
-            print(srcfq, dstfq)
             soft_link(srcfq, dstfq)
 
     def make_database(self, threads=8, ani=0.98, c=200, write_to_disk=False):
@@ -244,7 +243,6 @@ class Project:
             assert(len(tsk[['assembler', 'assembler_options','coverage','coverage_options','target']].drop_duplicates()) == 1)
             if cov_sample:
                 # We're calculating the coverage for a specified sample (cov_sample) against the target
-                print(config.read_links)
                 return not tu.run_coverage(tsk.iloc[0,:], stage, cov_sample, threads, force, check, real_reads, config)
             else:
                 # We're calculating coverage matrices for the target. Calculate the most expansive coverage matrix:
@@ -258,7 +256,7 @@ class Project:
 
         elif assembler and not coverage and not binner and not qctool:
             assert(len(tsk[['assembler', 'assembler_options','target']].drop_duplicates()) == 1)
-            return not tu.run_assembly(tsk.iloc[0,:], threads, force, check)
+            return not tu.run_assembly(tsk.iloc[0,:], threads, self.config.real_reads_prefix, force, check)
         else:
             raise Exception("Invalid options.")
 
